@@ -14,11 +14,10 @@ MOview 是一个用 Python 编写的分子轨道波函数读取与 OpenGL 可视
 - 使用明确的正数等值面值绘制正、负波函数表面，默认值为 `0.05`。
 - 调整原子大小；默认比例为 `1.00x`。
 - 原子标签支持 `Off`、`Number`、`Element`、`Number + element`，例如 `1`、`Ca`、`1Ca`；标签字号可调。
-- 标签定位支持默认的 `Attached` 和兼容的 `Floating`：Attached 贴在原子三维坐标上并参与透视和深度测试，Floating 保留原有的屏幕避让与引导线。
+- 标签定位支持默认的 `Attached` 和兼容的 `Floating`：Attached 贴在原子三维坐标上并参与透视，Floating 始终显示在表层并可能有引导线。
 - 原子风格支持 `Ball & stick`、`Space filling`、`Licorice`。
 - 等值面风格支持 `Glass`、`Solid`、`Wireframe`、`Solid + edges`。
 - 正、负相颜色可从带色块的命名预设中独立选择；配置文件可修改预设 RGB 或添加新颜色。
-- 默认外观保持原程序风格：`Glass` 等值面、`Ball & stick` 原子、关闭标签；启用标签时默认使用 Attached 定位。
 - Grid 不设应用层面的上限；当 Grid 大于 256 时，在计算前显示性能和内存警告。
 - 修改 Grid、Margin 或 Isovalue 后，程序会在输入停止 650 ms 后取消旧任务并重新预渲染附近轨道。
 - 大文件在工作线程中解析，避免阻塞 Qt 主界面。
@@ -62,8 +61,7 @@ moview /path/to/wavefunction.fch
 export PATH="/path/to/py-moview/bin:$PATH"
 moview /path/to/wavefunction.fch
 ```
-
-使用 zsh 时可将上述 `export` 写入 `~/.zshrc`。启动前仍应激活安装了 GUI 依赖的 Conda 环境；入口使用当前 PATH 中的 `python3`。
+启动前仍应激活安装了 GUI 依赖的 Conda 环境；入口使用当前 PATH 中的 `python3`。
 
 常用命令：
 
