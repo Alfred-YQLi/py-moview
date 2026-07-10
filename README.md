@@ -1,132 +1,371 @@
-# Py-MOview
+# MOview
 
-Py-MOview is a lightweight Python/OpenGL viewer for molecular orbital isosurfaces. It is designed as a cross-platform alternative for quickly previewing molecular orbitals directly from wavefunction files, especially on macOS where some GUI functions of Multiwfn are not available.
+**English** | [简体中文](README.zh-CN.md)
 
-The program currently supports Gaussian formatted checkpoint files (`.fchk/.fch`) and Molden-format wavefunction files. It provides an interactive GUI for viewing orbital isosurfaces, orbital energies, occupations, and alpha/beta spin orbitals.
+MOview is a Python molecular-orbital wavefunction reader and OpenGL viewer. It
+reads Gaussian formatted checkpoint (`.fchk`/`.fch`) and Molden files, evaluates
+selected molecular orbitals on a three-dimensional grid, extracts positive and
+negative isosurfaces, and displays the molecular structure, orbital surfaces,
+atom labels, and coordinate axes.
+
+The package provides an interactive GUI and a non-GUI batch mode. The GUI is
+intended for orbital inspection and comparison; batch mode is useful for parser
+checks, automation, and isosurface statistics.
 
 ## Features
 
-- Read Gaussian `.fchk/.fch` files
-- Read Molden-format wavefunction files
-- Visualize molecular orbital isosurfaces with OpenGL
-- Display orbital energies and occupations
-- Support alpha/beta spin orbitals
-- HOMO/LUMO quick selection
-- Adjustable isovalue, grid size, and box margin
-- Multi-orbital comparison in the same window
-- Basic keyboard shortcuts for orbital switching and view rotation
-- Pre-rendering/cache mechanism for faster orbital switching
+- Read Gaussian FCHK/FCH and Molden wavefunctions.
+- Display alpha/beta orbitals, energies, occupations, HOMO, and LUMO.
+- Compare up to nine orbitals with synchronized or independent views.
+- Use an explicit positive isovalue for the two wavefunction phases; the default
+  is `0.05`.
+- Adjust atom size, with a default scale of `1.00x`.
+- Show atom numbers, element symbols, or both (`1`, `Ca`, `1Ca`) with adjustable
+  label size.
+- Use depth-tested `Attached` labels or the original collision-avoiding
+  `Floating` labels.
+- Choose Ball & stick, Space filling, or Licorice atom styles.
+- Choose Glass, Solid, Wireframe, or Solid + edges surface styles.
+- Select independent named colors for positive and negative phases. Presets can
+  be changed or extended with RGB values in the configuration file.
+- Keep the original default appearance: Glass surfaces, Ball & stick atoms, and
+  labels disabled. Attached placement is used when labels are enabled.
+- Request any Grid supported by the machine. Grid values above 256 produce a
+  performance and memory warning instead of being rejected.
+- Restart background pre-rendering after a 650 ms debounce when Grid, Margin,
+  or Isovalue changes.
+- Parse large files in a worker thread so the Qt interface remains responsive.
+- Bound basis-grid, scalar-field, surface, and prefetch caches by configurable
+  resource budgets.
 
 ## Installation
 
-Python 3.12 is recommended. Other Python versions have not been systematically tested.
+Python 3.10 or newer is required. Python 3.12 is the primary tested version.
 
 ```bash
-conda create -n moview python=3.12
-conda activate moview
-pip install numpy scikit-image pyqtgraph PyQt6 PyOpenGL
+git clone https://github.com/Alfred-YQLi/py-moview.git
+cd py-moview
+conda activate wavefunction
+python -m pip install -e ".[gui]"
 ```
 
-## Usage
+Core batch operation requires `numpy` and `scikit-image`. The GUI additionally
+requires `PyQt6`, `PyOpenGL`, and `pyqtgraph`.
 
-Run directly with Python:
+## Running MOview
+
+### Python module
+
+Without installing the package, run it from the repository root, where
+`pyproject.toml` and the `moview/` package directory are located:
 
 ```bash
-python MOview.py molecule.fchk
+cd /path/to/py-moview
+python -m moview /path/to/wavefunction.fch
 ```
 
-If the file format is not detected correctly, specify it manually:
+Do not enter the inner `moview/` package directory before running
+`python -m moview`. The wavefunction path is a normal argument after the module
+name; it is not itself a Python module.
+
+### Installed console command
+
+An editable or normal package installation provides the `moview` command from
+any directory:
 
 ```bash
-python MOview.py molecule.fchk --fchk
-python MOview.py molecule.molden --molden
+moview /path/to/wavefunction.fch
 ```
 
-If `MOview.py` has a proper shebang and is added to your `PATH`, it can also be launched directly:
+### Source-tree PATH launcher
+
+The executable `bin/moview` resolves the repository from its own real path, so
+it can be used without an editable install and can also be symlinked elsewhere:
 
 ```bash
-MOview.py molecule.fchk
+export PATH="/path/to/py-moview/bin:$PATH"
+moview /path/to/wavefunction.fch
 ```
 
-## Common options
+For zsh, place the `export` line in `~/.zshrc`. Activate the Conda environment
+that contains the GUI dependencies before launching; the script uses the
+`python3` found in the active PATH.
+
+Common commands:
 
 ```bash
---grid <int>
+moview --help
+moview file.fch --fchk
+moview file.molden.input --molden
+moview file.fch --grid 96 --margin 4
+moview file.fch --prefetch-workers 4
+moview file.fch --config /path/to/custom.ini
+moview file.fch --no-auto-render
 ```
 
-Set the rendering grid size. The default value is 56. Larger values give smoother and more detailed isosurfaces but require more computation. A value around 81 is usually sufficient for high-quality visualization.
+## Batch Mode
+
+Batch mode does not import PyQt or OpenGL. It prints the detected format, atom
+and basis counts, orbital metadata, actual grid shape, isovalue, and positive
+and negative triangle counts.
 
 ```bash
---iso <float>
+moview file.fch --batch --grid 16 --orbital 1
+moview file.molden.input --batch --grid 16 --orbital 1
+moview file.fch --batch --spin beta --orbital 52 --grid 64 --iso 0.03 --margin 4
 ```
 
-Set the isovalue. The default value is 0, which enables automatic isovalue selection. For typical molecular orbitals, an isovalue around 0.05 may be reasonable, depending on the system.
+Batch orbital numbers are one-based. Grid must be at least 8, Margin must be
+non-negative, and Isovalue must be finite and positive. Grid values above 256
+print a warning to stderr but continue as requested.
+
+## Configuration
+
+The repository includes `moview.example.ini`. Copy it to the user-specific
+`moview.ini` before changing core counts, memory budgets, styles, or colors:
 
 ```bash
---margin <float>
+cp moview.example.ini moview.ini
 ```
 
-Set the box margin in bohr. The default value is 4.0. Increasing this value may help prevent distant isosurfaces from being truncated, but it also increases computational cost.
+`moview.ini` is ignored by Git so machine-specific settings are not committed
+accidentally. MOview uses the first configuration found in this order:
 
-```bash
---prefetch-workers <int>
-```
+1. `--config PATH`.
+2. `MOVIEW_CONFIG` environment variable.
+3. `moview.ini` in the current working directory.
+4. `~/Library/Application Support/MOview/config.ini` on macOS.
+5. `$XDG_CONFIG_HOME/moview/config.ini`, or `~/.config/moview/config.ini`.
+6. `moview.ini` beside the source package.
 
-Set the number of worker threads used for basis-grid construction and pre-rendering. The default value is 12. On most machines, using roughly 2–3 workers per CPU core is a reasonable starting point.
+Explicit command-line values override configuration values. For example,
+`--grid 96` overrides `[render] grid`. If no file is found, the package uses
+the same validated built-in defaults. Restart MOview after editing a config.
 
-## GUI controls
+### Resource settings
 
-The left panel contains file information, rendering settings, orbital selection, and comparison controls.
+Memory values in `[resources]` are expressed in MiB.
 
-Main controls:
-
-- **Open file**: load a new wavefunction file
-- **Render**: render the currently selected orbital
-- **Spin**: select alpha or beta orbitals when both are available
-- **Grid**: set the rendering grid size
-- **Margin**: set the grid margin in bohr
-- **Isovalue**: adjust the orbital isosurface value
-- **Compare**: render multiple orbitals side by side
-- **Synchronized rotation**: synchronize or separate the views in comparison mode
-- **Corner axes**: show or hide the coordinate axes
-- **Orbital list**: double-click an orbital to render it
-
-For natural orbital files, the occupation column may correspond to natural orbital occupation numbers rather than orbital energies.
-
-## Keyboard shortcuts
-
-| Key | Function |
+| Setting | Purpose |
 | --- | --- |
-| `A` | Previous orbital |
-| `D` | Next orbital |
-| Arrow keys | Rotate the view |
-| `C` + click atom | Set rotation center |
+| `basis_workers` | Threads used to construct a cached BasisGrid. |
+| `background_jobs` | Concurrent background pre-render batches. |
+| `basis_cache_mib` | Total BasisGrid cache budget. |
+| `max_basis_cache_entry_mib` | Largest individual BasisGrid eligible for caching; cannot exceed the total budget. |
+| `render_cache_mib` | Total scalar-field and isosurface cache budget. |
+| `render_cache_entries` | Additional limit on render-cache entries. |
+| `prefetch_field_budget_mib` | Scalar-field budget available to background pre-render planning. |
+| `max_prefetch_orbitals` | Maximum orbitals queued by one pre-render cycle. |
+| `grid_chunk_points` | Points evaluated per chunk; smaller values reduce temporary memory. |
+| `surface_face_limit` | Maximum triangles uploaded for each positive or negative OpenGL surface. |
 
-## Notes
+Increasing `background_jobs` changes scheduling concurrency but does not bypass
+`prefetch_field_budget_mib`. Physical CPU, RAM, and GPU memory remain the final
+limits.
 
-This program was initially developed and tested on macOS. Other operating systems may work, but they have not been systematically tested. Please report platform-specific bugs through Issues.
+### Render, view, and color defaults
 
-The default atom colors are based on GaussView-style element colors. The RGB values can be modified directly in the source code if needed.
+`[render]` controls Grid, Margin, Isovalue, surface/atom styles, atom scale,
+label content, `label_placement = attached|floating`, label size, and phase
+colors. `[view]` controls Zoom, synchronized views, axes, and initial automatic
+rendering.
 
-The current implementation is intended for fast visual inspection of molecular orbitals rather than final publication-quality rendering. For high-resolution final figures, exporting cube files and rendering them in specialized visualization software such as VMD may still be preferable.
+`[colors]` defines named presets as 0-255 RGB values. Reusing a built-in name
+changes that preset; a new name is appended to the GUI selectors.
 
-## Known limitations
+```ini
+[render]
+positive_color = Mint
+negative_color = Violet
 
-- Currently tested mainly on macOS
-- Input support is limited to `.fchk/.fch` and Molden-format files
-- Cube-file visualization is not currently implemented
-- Some uncommon basis-set or Molden conventions may require further testing
+[colors]
+Red = 255, 64, 64
+Mint = 40, 210, 160
+```
 
-## Contributing
+Color references are case-insensitive, while configured spelling is preserved
+in the GUI and scene legend. Invalid RGB values, unknown settings, unknown
+colors, and contradictory memory budgets produce actionable startup errors.
 
-Contributions are welcome. Especially for new file-format support or substantial GUI changes.
+## GUI Controls
 
-When reporting a bug, please include:
+The left panel keeps file metadata, HOMO/LUMO actions, comparison input, and the
+orbital table available while settings are divided into Compute and Display
+tabs.
 
-- Operating system
-- Python version
-- Installation method
-- Input file format
-- Command used to launch the program
-- Error message or screenshot
-- A minimal reproducible example, if possible
+### Compute
+
+- `Spin`: choose alpha or beta for unrestricted wavefunctions.
+- `Grid`: target points along the longest axis; the other dimensions follow the
+  molecular bounding-box proportions.
+- `Margin / bohr`: expand the molecular bounding box.
+- `Isovalue`: set the positive isovalue; the negative phase uses its negative.
+
+Changing Grid, Margin, or Isovalue invalidates obsolete background work and
+restarts pre-rendering after 650 ms. Grid values above 256 require performance
+confirmation before GUI pre-rendering begins.
+
+### Display
+
+- `Surface`: Glass, Solid, Wireframe, or Solid + edges.
+- `+ phase` / `- phase`: named positive/negative color selectors with swatches.
+- `Atoms`: Ball & stick, Space filling, or Licorice.
+- `Atom size`: scale atom radii without changing bond radii.
+- Left `Labels` selector: Off, Number, Element, or Number + element.
+- Right `Labels` selector: Attached or Floating placement.
+- `Label size`: adjust label size.
+- `Zoom`: change camera zoom.
+- `Sync views`: synchronize rotation and zoom across comparison views.
+- `Axes`: show or hide the lower-right coordinate axes.
+
+Attached labels are depth-tested billboards placed at the atom front surface.
+They move with the molecule and scale with perspective while remaining oriented
+toward the camera for legibility. Floating labels use screen-space collision
+avoidance and leader lines, which is useful for dense structures.
+
+Appearance controls only rebuild lightweight display objects. Changing atom
+style/size, labels, surface style, or phase colors does not parse the file,
+evaluate an orbital grid, or run marching cubes. All Attached labels share one
+texture atlas and one OpenGL draw call; labels Off allocates no label resources.
+
+The scene header uses two compact lines: orbital identity, occupation, and
+energy on the first; Isovalue, Grid, and named phase colors on the second.
+
+### Orbital comparison
+
+Comparison input uses one-based orbital numbers and accepts commas, spaces, and
+ranges in either direction:
+
+```text
+45,46,47
+45 46 47
+45-49
+49-45
+```
+
+### Keyboard shortcuts
+
+- `A` / `D`: select and render the previous/next orbital after a short debounce.
+- Arrow keys: rotate the active view.
+- `+` / `-`: zoom.
+- `C`, then click an atom: set the rotation center.
+
+Global shortcuts do not take over while focus is in the orbital table, a text
+field, combo box, spin box, or slider.
+
+## Grid and Performance
+
+Grid is the requested number of points along the molecular bounding box's
+longest axis. Work and scalar-field storage grow approximately with Grid cubed,
+so no application cap does not imply every value fits the current machine.
+
+- GUI Grid values above 256 show actual point count and estimated float32 field
+  memory before proceeding.
+- A confirmed Grid value is remembered for the current file session.
+- BasisGrid caching is used only when the estimated entry fits the configured
+  per-entry threshold.
+- Larger cases use chunked float32 multi-orbital evaluation rather than a full
+  `n_basis x n_points` matrix.
+- Built-in defaults provide 768 MiB for BasisGrid cache, 512 MiB for render
+  cache, and 192 MiB for background scalar fields.
+- Background pre-rendering has no fixed Grid cutoff. It queues at most 48
+  frontier orbitals and reduces that count according to the field budget.
+- If one float32 field already exceeds the prefetch budget, pre-rendering is
+  skipped while foreground Render remains available.
+- A changed Isovalue reuses cached scalar fields and reruns only marching cubes.
+- Async jobs are tied to a wavefunction generation, preventing stale results
+  from populating a newly loaded file's caches.
+- Labels are Off by default, so label rendering has no default rotation cost.
+
+## Program Flow
+
+### GUI
+
+1. `moview/__main__.py` calls `moview.cli.main()`.
+2. `moview.cli` loads config first, builds argument defaults, and applies CLI
+   overrides.
+3. GUI mode enables the narrow macOS native-log filter and imports
+   `moview.gui.main_window.run_gui()` lazily.
+4. `run_gui()` creates `QApplication` and `OpenGLViewer` with `AppConfig`.
+5. `moview.gui.layout` builds the controls, orbital table, and OpenGL views.
+6. `load_wavefunction()` submits parsing to a worker thread.
+7. `moview.parsers` detects FCHK or Molden and dispatches the parser.
+8. The parser creates a `Wavefunction` containing atoms, shells, energies,
+   occupations, and MO coefficients.
+9. `moview.analysis.compute_bonds()` builds bonds from covalent radii.
+10. The GUI populates orbitals and selects the default HOMO.
+11. Render checks high-Grid confirmation and the orbital cache.
+12. Small grids use cached BasisGrid multiplication; large grids use chunked
+    float32 single/multi-orbital evaluation.
+13. `moview.surface.extract_isosurfaces()` runs marching cubes for both phases.
+14. `moview.gui.gl_view` creates surface, molecule, and batched label items.
+15. `SceneSlot` stores each comparison view's geometry, camera, and transform.
+16. Budgeted background jobs pre-render frontier orbitals and restart after
+    debounced Compute changes.
+
+### Batch
+
+1. CLI loads config and validates arguments.
+2. `run_batch()` parses a `Wavefunction`.
+3. `moview.grid.compute_orbital_grid()` performs configured chunked evaluation.
+4. `extract_isosurfaces()` creates positive and negative meshes.
+5. Batch mode prints orbital, grid, and triangle statistics.
+
+## Project Layout
+
+| Path | Responsibility |
+| --- | --- |
+| `bin/moview` | Source-tree executable suitable for PATH or symlinking. |
+| `moview/__main__.py` | `python -m moview` package entry point. |
+| `moview/cli.py` | Config-first argument parsing, batch mode, and lazy GUI launch. |
+| `moview/config.py` | Discovery, validation, immutable settings, and named RGB colors. |
+| `moview.example.ini` | Conservative resource/render/view/color configuration template. |
+| `moview/wavefunction.py` | Shell and Wavefunction data models. |
+| `moview/constants.py` | Units, symbols, element colors, and radii. |
+| `moview/cache.py` | Writable runtime cache locations. |
+| `moview/parsers/` | Format detection plus FCHK and Molden parsers; ORCA is reserved. |
+| `moview/basis/` | Gaussian normalization, spherical transforms, and evaluators. |
+| `moview/grid.py` | Grid specifications, BasisGrid, and chunked orbital evaluation. |
+| `moview/surface.py` | SurfaceMesh and marching-cubes extraction. |
+| `moview/analysis/geometry.py` | Covalent-radius bond detection. |
+| `moview/gui/main_window.py` | Async jobs, caches, scene state, comparison, and camera. |
+| `moview/gui/layout.py` | Compute/Display controls, orbital table, header, and canvas. |
+| `moview/gui/gl_view.py` | OpenGL materials, molecule geometry, labels, axes, and input. |
+| `moview/gui/native_stderr.py` | Exact harmless macOS TSM/IMK/Qt keymapper filtering while preserving other stderr. |
+| `tests/test_config.py` | Config discovery, validation, colors, and CLI precedence. |
+| `tests/test_smoke.py` | Core API, labels, Grid, launcher, parser errors, and stderr filtering. |
+| `tests/test_gui.py` | GUI defaults, caches, pre-rendering, async behavior, and appearance. |
+| `tests/test_wavefunctions.py` | Optional local FCHK/Molden integration tests. |
+
+Large wavefunction fixtures are intentionally not committed. See
+`tests/wavefunctions/README.md` for expected local filenames. The affected
+integration tests skip explicitly when those files are absent.
+
+## Development Checks
+
+```bash
+python -m compileall -q -x '(^|/)\._' moview tests
+python -m unittest discover -s tests -v
+python -m moview file.fch --batch --grid 16 --orbital 1
+QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
+```
+
+Offscreen Qt commonly reports that `QOpenGLWidget` cannot create a real context;
+behavior tests still run, but visual OpenGL checks require a normal desktop
+session. External macOS volumes may create AppleDouble `._*` metadata, which is
+why compile checks exclude those names.
+
+Editable installation and the source launcher work from such volumes. For a
+release wheel, build from a clean Git checkout on APFS or another filesystem
+that does not create `._*` files inside generated setuptools directories.
+
+MOview filters only exact, known-harmless macOS input-method diagnostics. Python
+tracebacks, OpenGL failures, and unrelated Qt/native stderr remain visible.
+
+## Current Limitations
+
+- ORCA wavefunction parsing is reserved but not implemented.
+- Extremely high Grid values can still fail when physical memory is exhausted.
+- Marching cubes requires `scikit-image`.
+- The GUI requires desktop OpenGL; headless SSH/offscreen platforms may not
+  create a usable context.
