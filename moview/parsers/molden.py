@@ -5,9 +5,9 @@ from pathlib import Path
 
 import numpy as np
 
-from ..basis.gaussian import n_shell_functions
+from ..basis.gaussian import CARTESIAN_POWERS, n_shell_functions
 from ..constants import BOHR_TO_ANG, SYMBOL_TO_ATOMIC_NUMBER
-from ..wavefunction import Wavefunction, Shell
+from ..wavefunction import Shell, Wavefunction
 from .common import _as_float
 
 
@@ -16,6 +16,26 @@ def _section_header(line: str) -> tuple[str, str] | None:
     if match is None:
         return None
     return match.group(1).strip().lower(), match.group(2).strip()
+
+
+# Molden's required 15G order differs from the evaluator's Cartesian order.
+_MOLDEN_CARTESIAN_G_POWERS = (
+    (4, 0, 0),
+    (0, 4, 0),
+    (0, 0, 4),
+    (3, 1, 0),
+    (3, 0, 1),
+    (1, 3, 0),
+    (0, 3, 1),
+    (1, 0, 3),
+    (0, 1, 3),
+    (2, 2, 0),
+    (2, 0, 2),
+    (0, 2, 2),
+    (2, 1, 1),
+    (1, 2, 1),
+    (1, 1, 2),
+)
 
 
 class MoldenParser:
@@ -32,21 +52,28 @@ class MoldenParser:
     def __init__(self, path: Path):
         self.path = path
         self.title = path.name
-        self.lines: list[str] = []
-        self.sections: dict[str, tuple[int, int, str]] = {}
+        self.sections: dict[str, tuple[list[str], str]] = {}
         self.spherical_d = False
         self.spherical_f = False
         self.spherical_g = False
         self.spherical_h = False
+        self._coefficient_reorders: list[tuple[int, np.ndarray]] = []
 
     def parse(self) -> Wavefunction:
-        self.lines = self.path.read_text(encoding="utf-8", errors="replace").splitlines()
-        self.sections = self._build_sections()
+        self.sections = self._read_structure_sections()
         self.title = self._parse_title()
         atomic_numbers, coords_bohr = self._parse_atoms()
-        shells = self._parse_gto(coords_bohr)
+        shells, shell_to_atom = self._parse_gto(coords_bohr)
+        self._coefficient_reorders = self._build_coefficient_reorders(shells)
         n_basis = sum(n_shell_functions(shell.shell_type) for shell in shells)
-        alpha_energies, alpha_occ, alpha_coeffs, beta_energies, beta_occ, beta_coeffs = self._parse_mo(n_basis)
+        (
+            alpha_energies,
+            alpha_occ,
+            alpha_coeffs,
+            beta_energies,
+            beta_occ,
+            beta_coeffs,
+        ) = self._parse_mo(n_basis)
         n_alpha = int(np.count_nonzero(alpha_occ > 1.0e-8))
         n_beta = int(np.count_nonzero(beta_occ > 1.0e-8)) if beta_occ is not None else n_alpha
         return Wavefunction(
@@ -59,13 +86,7 @@ class MoldenParser:
             n_beta=n_beta,
             n_basis=n_basis,
             shell_types=np.asarray([shell.shell_type for shell in shells], dtype=np.int32),
-            shell_to_atom=np.asarray(
-                [
-                    int(np.argmin(np.linalg.norm(coords_bohr - shell.center, axis=1)))
-                    for shell in shells
-                ],
-                dtype=np.int32,
-            ),
+            shell_to_atom=shell_to_atom,
             shells=shells,
             alpha_energies=alpha_energies,
             beta_energies=beta_energies,
@@ -76,42 +97,60 @@ class MoldenParser:
             source_format="molden",
         )
 
-    def _build_sections(self) -> dict[str, tuple[int, int, str]]:
-        starts: list[tuple[str, int, str]] = []
-        for idx, line in enumerate(self.lines):
-            header = _section_header(line)
-            if header is None:
-                continue
-            name, suffix = header
-            starts.append((name, idx, suffix))
-            if name == "5d":
-                self.spherical_d = True
-            elif name == "6d":
-                self.spherical_d = False
-            elif name == "7f":
-                self.spherical_f = True
-            elif name == "10f":
-                self.spherical_f = False
-            elif name == "9g":
-                self.spherical_g = True
-            elif name == "15g":
-                self.spherical_g = False
-            elif name == "11h":
-                self.spherical_h = True
-            elif name == "21h":
-                self.spherical_h = False
-        sections: dict[str, tuple[int, int, str]] = {}
-        for pos, (name, start, suffix) in enumerate(starts):
-            end = starts[pos + 1][1] if pos + 1 < len(starts) else len(self.lines)
-            sections.setdefault(name, (start + 1, end, suffix))
+    def _apply_angular_convention(self, name: str) -> None:
+        if name in {"5d", "5d7f"}:
+            self.spherical_d = True
+            self.spherical_f = True
+        elif name == "5d10f":
+            self.spherical_d = True
+            self.spherical_f = False
+        elif name == "6d":
+            self.spherical_d = False
+        elif name == "7f":
+            self.spherical_f = True
+        elif name == "10f":
+            self.spherical_f = False
+        elif name == "9g":
+            self.spherical_g = True
+        elif name == "15g":
+            self.spherical_g = False
+        elif name == "11h":
+            self.spherical_h = True
+        elif name == "21h":
+            self.spherical_h = False
+
+    def _read_structure_sections(self) -> dict[str, tuple[list[str], str]]:
+        self.spherical_d = False
+        self.spherical_f = False
+        self.spherical_g = False
+        self.spherical_h = False
+        sections: dict[str, tuple[list[str], str]] = {}
+        current_lines: list[str] | None = None
+        with self.path.open("r", encoding="utf-8", errors="replace") as handle:
+            for raw_line in handle:
+                line = raw_line.rstrip("\r\n")
+                header = _section_header(line)
+                if header is None:
+                    if current_lines is not None:
+                        current_lines.append(line)
+                    continue
+                name, suffix = header
+                self._apply_angular_convention(name)
+                if name == "mo":
+                    break
+                if name in {"title", "atoms", "gto"} and name not in sections:
+                    current_lines = []
+                    sections[name] = (current_lines, suffix)
+                else:
+                    current_lines = None
         return sections
 
     def _parse_title(self) -> str:
         title_section = self.sections.get("title")
         if title_section is None:
             return self.path.name
-        start, end, _suffix = title_section
-        for line in self.lines[start:end]:
+        lines, _suffix = title_section
+        for line in lines:
             text = line.strip()
             if text:
                 return text
@@ -121,11 +160,11 @@ class MoldenParser:
         section = self.sections.get("atoms")
         if section is None:
             raise ValueError("Molden file is missing [Atoms]")
-        start, end, suffix = section
+        lines, suffix = section
         unit = suffix.upper()
         atomic_numbers: list[int] = []
         coords: list[tuple[float, float, float]] = []
-        for line in self.lines[start:end]:
+        for line in lines:
             parts = line.split()
             if len(parts) < 6:
                 continue
@@ -157,46 +196,71 @@ class MoldenParser:
             return -5
         return base_type
 
-    def _parse_gto(self, coords_bohr: np.ndarray) -> list[Shell]:
+    @staticmethod
+    def _build_coefficient_reorders(shells: list[Shell]) -> list[tuple[int, np.ndarray]]:
+        source_index = {
+            power: index for index, power in enumerate(_MOLDEN_CARTESIAN_G_POWERS)
+        }
+        g_to_internal = np.asarray(
+            [source_index[power] for power in CARTESIAN_POWERS[4]],
+            dtype=np.intp,
+        )
+        reorders: list[tuple[int, np.ndarray]] = []
+        basis_start = 0
+        for shell in shells:
+            if shell.shell_type == 4:
+                reorders.append((basis_start, g_to_internal))
+            basis_start += n_shell_functions(shell.shell_type)
+        return reorders
+
+    def _parse_gto(self, coords_bohr: np.ndarray) -> tuple[list[Shell], np.ndarray]:
         section = self.sections.get("gto")
         if section is None:
             raise ValueError("Molden file is missing [GTO]")
-        start, end, _suffix = section
+        lines, _suffix = section
         shells: list[Shell] = []
+        shell_to_atom: list[int] = []
         atom_index0: int | None = None
-        i = start
-        while i < end:
-            line = self.lines[i].strip()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
             i += 1
             if not line:
                 continue
             parts = line.split()
-            if len(parts) >= 2 and parts[0].lstrip("+-").isdigit():
+            if parts[0].lstrip("+-").isdigit():
                 atom_index0 = int(parts[0]) - 1
                 if atom_index0 < 0 or atom_index0 >= coords_bohr.shape[0]:
                     raise ValueError(f"Molden [GTO] atom index out of range: {parts[0]}")
                 continue
             label = parts[0].lower()
-            if atom_index0 is None or label not in self.SHELL_LABELS or len(parts) < 2:
+            if atom_index0 is None or len(parts) < 2:
+                continue
+            if label not in self.SHELL_LABELS:
+                if parts[1].lstrip("+-").isdigit():
+                    raise ValueError(f"Unsupported Molden shell label: {parts[0]!r}")
                 continue
             n_prim = int(parts[1])
-            scale = _as_float(parts[2]) if len(parts) >= 3 else 1.0
+            if n_prim < 1:
+                raise ValueError(f"Molden shell {label!r} must contain at least one primitive")
+            if len(parts) >= 3:
+                _as_float(parts[2])
             exponents: list[float] = []
             coefficients: list[float] = []
             sp_coefficients: list[float] | None = [] if label == "sp" else None
             for _ in range(n_prim):
-                if i >= end:
+                if i >= len(lines):
                     raise ValueError("Molden [GTO] ended inside a shell")
-                prim_parts = self.lines[i].split()
+                prim_parts = lines[i].split()
                 i += 1
                 if len(prim_parts) < 2:
                     raise ValueError("Invalid Molden primitive line")
                 exponents.append(_as_float(prim_parts[0]))
-                coefficients.append(scale * _as_float(prim_parts[1]))
+                coefficients.append(_as_float(prim_parts[1]))
                 if sp_coefficients is not None:
                     if len(prim_parts) < 3:
                         raise ValueError("Molden sp shell primitive is missing p coefficient")
-                    sp_coefficients.append(scale * _as_float(prim_parts[2]))
+                    sp_coefficients.append(_as_float(prim_parts[2]))
             shells.append(
                 Shell(
                     shell_type=self._molden_shell_type(label),
@@ -210,9 +274,10 @@ class MoldenParser:
                     ),
                 )
             )
+            shell_to_atom.append(atom_index0)
         if not shells:
             raise ValueError("Molden [GTO] section contains no basis shells")
-        return shells
+        return shells, np.asarray(shell_to_atom, dtype=np.int32)
 
     def _finish_mo_block(
         self,
@@ -235,10 +300,15 @@ class MoldenParser:
                     f"Molden MO coefficient index {basis_idx} is outside 1..{n_basis}"
                 )
             row[basis_idx - 1] = coeff
-        spin = str(block.get("spin", "alpha")).lower()
+        for basis_start, source_offsets in self._coefficient_reorders:
+            basis_end = basis_start + source_offsets.size
+            row[basis_start:basis_end] = row[basis_start:basis_end][source_offsets]
+        spin = str(block.get("spin", "alpha")).strip().lower()
+        if spin not in {"alpha", "beta"}:
+            raise ValueError(f"Invalid Molden MO spin: {block.get('spin')!r}")
         energy = float(block.get("energy", np.nan))
         occupation = float(block.get("occupation", 0.0))
-        if spin.startswith("beta"):
+        if spin == "beta":
             beta_rows.append(row)
             beta_energies.append(energy)
             beta_occ.append(occupation)
@@ -250,11 +320,14 @@ class MoldenParser:
     def _parse_mo(
         self,
         n_basis: int,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
-        section = self.sections.get("mo")
-        if section is None:
-            raise ValueError("Molden file is missing [MO]")
-        start, end, _suffix = section
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray | None,
+        np.ndarray | None,
+        np.ndarray | None,
+    ]:
         alpha_rows: list[np.ndarray] = []
         alpha_energies: list[float] = []
         alpha_occ: list[float] = []
@@ -262,31 +335,60 @@ class MoldenParser:
         beta_energies: list[float] = []
         beta_occ: list[float] = []
         block: dict[str, object] = {}
-        for line in self.lines[start:end]:
-            text = line.strip()
-            if not text:
-                continue
-            lower = text.lower()
-            if lower.startswith("sym="):
-                self._finish_mo_block(
-                    block, n_basis, alpha_rows, alpha_energies, alpha_occ, beta_rows, beta_energies, beta_occ
-                )
-                block = {"coefficients": []}
-            elif lower.startswith("ene="):
-                block["energy"] = _as_float(text.split("=", 1)[1])
-            elif lower.startswith("spin="):
-                block["spin"] = text.split("=", 1)[1].strip()
-            elif lower.startswith("occup="):
-                block["occupation"] = _as_float(text.split("=", 1)[1])
-            else:
-                parts = text.split()
-                if len(parts) >= 2 and parts[0].lstrip("+-").isdigit():
-                    coefficients = block.setdefault("coefficients", [])
-                    if not isinstance(coefficients, list):
-                        raise TypeError("Molden MO coefficient container is not a list")
-                    coefficients.append((int(parts[0]), _as_float(parts[1])))
+        in_mo = False
+        with self.path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                header = _section_header(line)
+                if header is not None:
+                    name, _suffix = header
+                    if name == "mo":
+                        in_mo = True
+                        continue
+                    if in_mo:
+                        break
+                    continue
+                if not in_mo:
+                    continue
+                text = line.strip()
+                if not text:
+                    continue
+                lower = text.lower()
+                if lower.startswith("sym="):
+                    self._finish_mo_block(
+                        block,
+                        n_basis,
+                        alpha_rows,
+                        alpha_energies,
+                        alpha_occ,
+                        beta_rows,
+                        beta_energies,
+                        beta_occ,
+                    )
+                    block = {"coefficients": []}
+                elif lower.startswith("ene="):
+                    block["energy"] = _as_float(text.split("=", 1)[1])
+                elif lower.startswith("spin="):
+                    block["spin"] = text.split("=", 1)[1].strip()
+                elif lower.startswith("occup="):
+                    block["occupation"] = _as_float(text.split("=", 1)[1])
+                else:
+                    parts = text.split()
+                    if len(parts) >= 2 and parts[0].lstrip("+-").isdigit():
+                        coefficients = block.setdefault("coefficients", [])
+                        if not isinstance(coefficients, list):
+                            raise TypeError("Molden MO coefficient container is not a list")
+                        coefficients.append((int(parts[0]), _as_float(parts[1])))
+        if not in_mo:
+            raise ValueError("Molden file is missing [MO]")
         self._finish_mo_block(
-            block, n_basis, alpha_rows, alpha_energies, alpha_occ, beta_rows, beta_energies, beta_occ
+            block,
+            n_basis,
+            alpha_rows,
+            alpha_energies,
+            alpha_occ,
+            beta_rows,
+            beta_energies,
+            beta_occ,
         )
         if not alpha_rows:
             raise ValueError("Molden [MO] section contains no alpha orbitals")

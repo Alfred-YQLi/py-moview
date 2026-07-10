@@ -226,6 +226,6 @@ __marimo__/
 # User-specific runtime configuration
 moview.ini
 
-# Large local integration fixtures
-tests/wavefunctions/*
-!tests/wavefunctions/README.md
+# Local development reports and large integration fixtures
+docs/moview/
+tests/wavefunctions/

@@ -16,6 +16,7 @@ from moview.constants import BOHR_TO_ANG, DEFAULT_ISOVALUE, HARTREE_TO_EV, atom_
 from moview.grid import OrbitalGrid, make_grid_spec
 from moview.gui.native_stderr import _should_suppress_native_stderr, filter_macos_gui_warnings
 from moview.gui.presentation import atom_label_texts, high_grid_warning_text
+from moview.parsers import parse_wavefunction
 from moview.parsers.molden import MoldenParser
 from moview.surface import _empty_mesh, extract_isosurfaces
 
@@ -85,6 +86,162 @@ class SmokeTests(unittest.TestCase):
                 [],
                 [],
             )
+
+    def test_molden_rejects_unknown_spin(self) -> None:
+        parser = MoldenParser(Path("unused.molden"))
+        with self.assertRaisesRegex(ValueError, "Invalid Molden MO spin"):
+            parser._finish_mo_block(
+                {"coefficients": [(1, 0.5)], "spin": "Gamma"},
+                1,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+            )
+
+    def test_molden_spherical_markers_scale_and_compact_spin(self) -> None:
+        cases = (
+            ("5D", (-2, -3), 12),
+            ("5D7F", (-2, -3), 12),
+            ("5D10F", (-2, 3), 15),
+            ("7F", (2, -3), 13),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for marker, shell_types, n_basis in cases:
+                with self.subTest(marker=marker):
+                    alpha_coefficients = "\n".join(
+                        f"{index} {1.0 if index == 1 else 0.0}"
+                        for index in range(1, n_basis + 1)
+                    )
+                    beta_coefficients = "\n".join(
+                        f"{index} {-1.0 if index == 1 else 0.0}"
+                        for index in range(1, n_basis + 1)
+                    )
+                    path = Path(directory) / f"{marker.lower()}.molden"
+                    path.write_text(
+                        "\n".join(
+                            (
+                                "[Molden Format]",
+                                "[Atoms] AU",
+                                "H 1 1 0.0 0.0 0.0",
+                                "[GTO]",
+                                "1 0",
+                                "d 1 2.0",
+                                "1.0 0.5",
+                                "f 1 3.0",
+                                "0.8 0.25",
+                                f"[{marker}]",
+                                "[MO]",
+                                "Sym= A",
+                                "Ene= -0.1",
+                                "Spin= Alpha",
+                                "Occup= 1.0",
+                                alpha_coefficients,
+                                "Sym= A",
+                                "Ene= 0.2",
+                                "Spin=Beta",
+                                "Occup= 0.0",
+                                beta_coefficients,
+                            )
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+
+                    wavefunction = parse_wavefunction(path)
+
+                    self.assertEqual(tuple(wavefunction.shell_types), shell_types)
+                    self.assertEqual(wavefunction.n_basis, n_basis)
+                    self.assertEqual(wavefunction.alpha_coefficients.shape, (1, n_basis))
+                    self.assertEqual(wavefunction.beta_coefficients.shape, (1, n_basis))
+                    self.assertEqual(wavefunction.n_alpha, 1)
+                    self.assertEqual(wavefunction.n_beta, 0)
+                    self.assertTrue(wavefunction.is_unrestricted)
+                    np.testing.assert_array_equal(wavefunction.shell_to_atom, (0, 0))
+                    np.testing.assert_allclose(
+                        [
+                            wavefunction.shells[0].coefficients[0],
+                            wavefunction.shells[1].coefficients[0],
+                        ],
+                        (0.5, 0.25),
+                    )
+                    self.assertEqual(wavefunction.alpha_coefficients[0, 0], 1.0)
+                    self.assertEqual(wavefunction.beta_coefficients[0, 0], -1.0)
+
+    def test_molden_sp_shell_coefficients(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sp-shell.molden"
+            path.write_text(
+                "\n".join(
+                    (
+                        "[Molden Format]",
+                        "[Atoms] Angs",
+                        f"H 1 1 {BOHR_TO_ANG} 0.0 0.0",
+                        "[GTO]",
+                        "1",
+                        "sp 2 1.0",
+                        "1.0D+00 4.0D-01 5.0D-01",
+                        "5.0D-01 6.0D-01 7.0D-01",
+                        "[MO]",
+                        "Sym= A1",
+                        "Ene= -0.5",
+                        "Spin= Alpha",
+                        "Occup= 2.0",
+                        "1 1.0",
+                        "2 0.0",
+                        "3 0.0",
+                        "4 0.0",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            wavefunction = parse_wavefunction(path)
+
+        self.assertEqual(wavefunction.n_basis, 4)
+        self.assertEqual(tuple(wavefunction.shell_types), (-1,))
+        self.assertEqual(wavefunction.alpha_coefficients.shape, (1, 4))
+        np.testing.assert_allclose(wavefunction.coordinates_bohr[0], (1.0, 0.0, 0.0))
+        np.testing.assert_allclose(wavefunction.shells[0].exponents, (1.0, 0.5))
+        np.testing.assert_allclose(wavefunction.shells[0].coefficients, (0.4, 0.6))
+        np.testing.assert_allclose(wavefunction.shells[0].sp_coefficients, (0.5, 0.7))
+
+    def test_molden_cartesian_g_coefficients_follow_format_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cartesian-g.molden"
+            coefficients = "\n".join(f"{index} {index}" for index in range(1, 16))
+            path.write_text(
+                "\n".join(
+                    (
+                        "[Molden Format]",
+                        "[Atoms] AU",
+                        "H 1 1 0.0 0.0 0.0",
+                        "[GTO]",
+                        "1 0",
+                        "g 1 1.0",
+                        "1.0 1.0",
+                        "[MO]",
+                        "Sym= A1",
+                        "Ene= -0.5",
+                        "Spin= Alpha",
+                        "Occup= 2.0",
+                        coefficients,
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            wavefunction = parse_wavefunction(path)
+
+        self.assertEqual(tuple(wavefunction.shell_types), (4,))
+        np.testing.assert_array_equal(
+            wavefunction.alpha_coefficients[0],
+            (3, 9, 12, 7, 2, 8, 15, 14, 6, 11, 13, 10, 5, 4, 1),
+        )
 
     def test_macos_gui_warning_filter_predicate(self) -> None:
         suppressed = (

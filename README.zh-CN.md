@@ -42,7 +42,7 @@ python -m pip install -e ".[gui]"
 
 ```bash
 cd /path/to/py-moview
-python -m moview tests/wavefunctions/save_uks_UNO.fch
+python -m moview /path/to/wavefunction.fch
 ```
 
 安装为 editable package 后，也可以在任意目录使用控制台命令：
@@ -61,6 +61,7 @@ moview /path/to/wavefunction.fch
 export PATH="/path/to/py-moview/bin:$PATH"
 moview /path/to/wavefunction.fch
 ```
+
 启动前仍应激活安装了 GUI 依赖的 Conda 环境；入口使用当前 PATH 中的 `python3`。
 
 常用命令：
@@ -80,12 +81,22 @@ python -m moview file.fch --no-auto-render
 批处理模式不加载 PyQt/OpenGL，会输出文件格式、原子数、基函数数、轨道信息、实际网格形状、等值面值和三角形数量：
 
 ```bash
-python -m moview tests/wavefunctions/save_uks.fch --batch --grid 16 --orbital 212
-python -m moview tests/wavefunctions/save.molden.input --batch --grid 16 --orbital 212
+python -m moview file.fch --batch --grid 16 --orbital 1
+python -m moview file.molden.input --batch --grid 16 --orbital 1
 python -m moview file.fch --batch --spin beta --orbital 52 --grid 64 --iso 0.03 --margin 4
 ```
 
 批处理模式的轨道编号从 1 开始。Grid 最小值为 8，Margin 不能为负数，Isovalue 必须是有限正数且默认为 `0.05`。Grid 大于 256 时会在 stderr 输出性能警告，但批处理仍按请求继续计算。
+
+## Molden 兼容性
+
+MOview 读取 [Molden 官方格式](https://www.theochem.ru.nl/molden/molden_format.html)
+中的 `[Atoms]`、`[GTO]` 和 `[MO]` 段。原子坐标可使用原子单位或埃，基组支持
+`S` 到 `G` 壳层、组合 `SP` 壳层以及 D/F/G 的 Cartesian 和 spherical
+约定；分子轨道支持 alpha、beta 自旋和稀疏的带编号系数。
+
+程序以流式方式把 `[MO]` 段读入系数矩阵，不会把大型 Molden 文件的数百万行
+源文本同时保留在内存中。ORCA 的 `orca_2mkl` 等工具生成的 Molden 文件可以直接打开。
 
 ## 配置文件
 
@@ -154,7 +165,7 @@ Mint = 40, 210, 160
 - `Margin / bohr`：分子包围盒外扩距离。
 - `Isovalue`：正数等值面值；默认 `0.05`，可用滑块或数值输入修改。
 
-修改 Grid、Margin 或 Isovalue 时，旧的后台预渲染会立即失效；输入停止 650 ms 后，程序按新参数重新预渲染。Grid 大于 256 时，预渲染开始前也会先显示性能确认框。
+修改 Grid、Margin 或 Isovalue 时，已失效的后台预渲染会立即取消；输入停止 650 ms 后，程序按新参数重新预渲染。Grid 大于 256 时，预渲染开始前也会先显示性能确认框。
 
 ### Display
 
@@ -198,7 +209,7 @@ Mint = 40, 210, 160
 Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内存近似随 Grid 的三次方增长，因此“没有软件上限”并不代表任意值都能在当前机器内存中完成。
 
 - GUI 在 Grid 大于 256 时弹出一次确认框，并显示实际三维点数和单个 float32 标量场的估算内存。
-- 同一个 Grid 值确认后，本次文件会话中不重复弹窗；切换文件后重新确认。
+- 同一个 Grid 值确认后，当前文件会话中不重复弹窗；切换文件后重新确认。
 - 默认情况下，预计完整 `BasisGrid` 不超过 640 MiB 时，GUI 使用基函数缓存，以保持低分辨率和多轨道切换速度；阈值可在配置中修改。
 - 超过该阈值时，GUI 使用 float32 分块、多轨道批量计算，不构造 `n_basis x n_points` 的巨型矩阵。
 - 默认基函数缓存总预算为 768 MiB，轨道/等值面缓存总预算为 512 MiB。
@@ -296,10 +307,9 @@ Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内
 | `tests/test_config.py` | 配置发现、覆盖优先级、资源/颜色解析、错误输入和 CLI 默认值。 |
 | `tests/test_smoke.py` | 常量、标签、真实高 Grid 规格、Molden 错误输入和 macOS 日志过滤。 |
 | `tests/test_gui.py` | GUI 默认值、资源配置、颜色/标题同步、无上限 Grid、预渲染、缓存、异步加载、快捷键和显示样式。无 GUI 依赖时自动跳过。 |
-| `tests/test_wavefunctions.py` | 解析所有样例，并为 FCHK/Molden 生成代表性低 Grid 等值面。 |
-| `tests/wavefunctions/` | 自动测试使用的本地波函数文件。 |
+| `tests/test_wavefunctions.py` | 可选的 FCHK/Molden 样例集成测试和低 Grid 等值面测试。 |
 
-`tests/wavefunctions/` 中的大型波函数是本地测试数据，不提交到 Git。将文档中列出的样例放入该目录后会自动运行格式集成测试；样例缺失时这些测试明确跳过。
+大型波函数样例只作为本地测试数据，不属于仓库内容；样例不可用时，依赖它们的集成测试会明确跳过。
 
 ## 开发检查
 
@@ -308,8 +318,8 @@ Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内
 ```bash
 python -m compileall -q -x '(^|/)\._' moview tests
 python -m unittest discover -s tests -v
-python -m moview tests/wavefunctions/save_uks.fch --batch --grid 16 --orbital 212
-python -m moview tests/wavefunctions/save.molden.input --batch --grid 16 --orbital 212
+python -m moview /path/to/wavefunction.fch --batch --grid 16 --orbital 1
+python -m moview /path/to/wavefunction.molden --batch --grid 16 --orbital 1
 ```
 
 GUI 环境中的离屏行为测试：

@@ -22,14 +22,13 @@ checks, automation, and isosurface statistics.
 - Adjust atom size, with a default scale of `1.00x`.
 - Show atom numbers, element symbols, or both (`1`, `Ca`, `1Ca`) with adjustable
   label size.
-- Use depth-tested `Attached` labels or the original collision-avoiding
-  `Floating` labels.
+- Use depth-tested `Attached` labels or collision-avoiding `Floating` labels.
 - Choose Ball & stick, Space filling, or Licorice atom styles.
 - Choose Glass, Solid, Wireframe, or Solid + edges surface styles.
 - Select independent named colors for positive and negative phases. Presets can
   be changed or extended with RGB values in the configuration file.
-- Keep the original default appearance: Glass surfaces, Ball & stick atoms, and
-  labels disabled. Attached placement is used when labels are enabled.
+- The default appearance uses Glass surfaces, Ball & stick atoms, and disabled
+  labels. Attached placement is selected when labels are enabled.
 - Request any Grid supported by the machine. Grid values above 256 produce a
   performance and memory warning instead of being rejected.
 - Restart background pre-rendering after a 650 ms debounce when Grid, Margin,
@@ -119,6 +118,18 @@ Batch orbital numbers are one-based. Grid must be at least 8, Margin must be
 non-negative, and Isovalue must be finite and positive. Grid values above 256
 print a warning to stderr but continue as requested.
 
+## Molden Compatibility
+
+MOview reads the `[Atoms]`, `[GTO]`, and `[MO]` sections used by the
+[official Molden format](https://www.theochem.ru.nl/molden/molden_format.html).
+It supports atomic coordinates in atomic units or angstrom, `S` through `G`
+shells, combined `SP` shells, Cartesian and spherical D/F/G conventions, and
+both alpha and beta molecular orbitals. Indexed MO coefficients may be sparse.
+
+The `[MO]` section is streamed into coefficient matrices, so large Molden files
+are not retained in memory as millions of source lines. Molden files produced
+by tools such as ORCA's `orca_2mkl` can be opened directly.
+
 ## Configuration
 
 The repository includes `moview.example.ini`. Copy it to the user-specific
@@ -201,7 +212,7 @@ tabs.
 - `Margin / bohr`: expand the molecular bounding box.
 - `Isovalue`: set the positive isovalue; the negative phase uses its negative.
 
-Changing Grid, Margin, or Isovalue invalidates obsolete background work and
+Changing Grid, Margin, or Isovalue cancels affected background work and
 restarts pre-rendering after 650 ms. Grid values above 256 require performance
 confirmation before GUI pre-rendering begins.
 
@@ -245,7 +256,7 @@ ranges in either direction:
 
 ### Keyboard shortcuts
 
-- `A` / `D`: select and render the previous/next orbital after a short debounce.
+- `A` / `D`: select and render the adjacent orbital after a short debounce.
 - Arrow keys: rotate the active view.
 - `+` / `-`: zoom.
 - `C`, then click an atom: set the rotation center.
@@ -323,7 +334,7 @@ so no application cap does not imply every value fits the current machine.
 | `moview/wavefunction.py` | Shell and Wavefunction data models. |
 | `moview/constants.py` | Units, symbols, element colors, and radii. |
 | `moview/cache.py` | Writable runtime cache locations. |
-| `moview/parsers/` | Format detection plus FCHK and Molden parsers; ORCA is reserved. |
+| `moview/parsers/` | Format detection plus FCHK and Molden parsers; direct ORCA input is reserved. |
 | `moview/basis/` | Gaussian normalization, spherical transforms, and evaluators. |
 | `moview/grid.py` | Grid specifications, BasisGrid, and chunked orbital evaluation. |
 | `moview/surface.py` | SurfaceMesh and marching-cubes extraction. |
@@ -335,11 +346,11 @@ so no application cap does not imply every value fits the current machine.
 | `tests/test_config.py` | Config discovery, validation, colors, and CLI precedence. |
 | `tests/test_smoke.py` | Core API, labels, Grid, launcher, parser errors, and stderr filtering. |
 | `tests/test_gui.py` | GUI defaults, caches, pre-rendering, async behavior, and appearance. |
-| `tests/test_wavefunctions.py` | Optional local FCHK/Molden integration tests. |
+| `tests/test_wavefunctions.py` | Optional FCHK/Molden fixture integration and low-Grid surface tests. |
 
-Large wavefunction fixtures are intentionally not committed. See
-`tests/wavefunctions/README.md` for expected local filenames. The affected
-integration tests skip explicitly when those files are absent.
+Large wavefunction fixtures are local-only and are not part of the repository.
+Fixture-dependent integration tests skip explicitly when those files are
+unavailable.
 
 ## Development Checks
 
