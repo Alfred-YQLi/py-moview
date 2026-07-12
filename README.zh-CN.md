@@ -36,6 +36,37 @@ python -m pip install -e ".[gui]"
 
 核心依赖为 `numpy` 和 `scikit-image`。GUI 还需要 `PyQt6`、`PyOpenGL` 和 `pyqtgraph`。
 
+### Linux OpenGL
+
+GUI 需要桌面 OpenGL context。MOview 会在创建 `QApplication` 前请求桌面
+OpenGL 2.1、8-bit RGBA、24-bit depth buffer、8-bit stencil buffer 和双缓冲。
+该格式同时适用于硬件驱动和 llvmpipe 等 Mesa 软件渲染器。
+
+在 X11 会话中可先检查显示与渲染器：
+
+```bash
+echo "$DISPLAY"
+glxinfo -B
+```
+
+`Qt: Session management error` 是独立的 ICE 会话警告，不是 OpenGL 初始化失败。
+可以只对本次启动移除该环境变量，不影响渲染：
+
+```bash
+env -u SESSION_MANAGER moview /path/to/wavefunction.fch
+```
+
+需要明确使用 Mesa 软件渲染时，可运行：
+
+```bash
+env -u SESSION_MANAGER LIBGL_ALWAYS_SOFTWARE=1 moview /path/to/wavefunction.fch
+```
+
+如果 Qt 仍报告 GLX 配置错误，可设置
+`QT_LOGGING_RULES="qt.qpa.gl=true"` 输出 OpenGL 初始化细节。这通常意味着 Qt
+实际加载的 GLX/Mesa 动态库与 `glxinfo` 使用的库不一致。批处理模式不依赖 Qt
+或 OpenGL，仍可正常使用。
+
 ## 使用方法
 
 未安装软件包时，需要在项目根目录（包含 `pyproject.toml` 和 `moview/` 包目录的位置）运行：
@@ -226,7 +257,7 @@ Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内
 1. `moview/__main__.py` 调用 `moview.cli.main()`。
 2. `moview/cli.py` 先调用 `moview.config.load_config()`，再用配置值构造完整参数解析器；显式 CLI 参数覆盖配置。
 3. GUI 模式启用 macOS 原生 stderr 过滤，再导入 `moview.gui.main_window.run_gui()`。
-4. `run_gui()` 创建 `QApplication` 和 `OpenGLViewer`，资源预算、默认样式和颜色随 `AppConfig` 注入。
+4. `moview.gui.opengl_context` 在 `run_gui()` 创建 `QApplication` 和 `OpenGLViewer` 前设置统一 surface format，资源预算、默认样式和颜色随 `AppConfig` 注入。
 5. `moview/gui/layout.py` 创建侧栏、Compute/Display 控件、颜色选择器、轨道表和 OpenGL 视图区。
 6. `OpenGLViewer.load_wavefunction()` 在线程池中调用 `moview.parsers.parse_wavefunction()`，避免主线程卡顿。
 7. `moview/parsers/__init__.py` 检测格式并分派给 `FCHKParser` 或 `MoldenParser`。
@@ -294,6 +325,7 @@ Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内
 | `moview/gui/main_window.py` | 主窗口状态、异步任务、缓存、颜色、信息栏、比较视图、预取和相机控制。 |
 | `moview/gui/layout.py` | Compute/Display 控件、颜色选择器、轨道表、紧凑信息栏和画布布局。 |
 | `moview/gui/gl_view.py` | OpenGL 视图、fog shader、表面材质、分子几何、透视贴附/浮动批量标签和鼠标交互。 |
+| `moview/gui/opengl_context.py` | 设置可移植的桌面 Qt OpenGL surface format。 |
 | `moview/gui/widgets.py` | 数值滑块、角落坐标轴、视图宿主和 `SceneSlot` 状态。 |
 | `moview/gui/presentation.py` | 显示风格/标签选项、高 Grid 阈值和警告文本。 |
 | `moview/gui/styles.py` | Qt 样式表和 GUI 配色。 |

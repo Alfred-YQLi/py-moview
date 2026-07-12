@@ -1849,7 +1849,6 @@ def run_gui(
     app = QtWidgets.QApplication.instance()
     owned_app = app is None
     if app is None:
-        QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
         app = QtWidgets.QApplication(sys.argv[:1])
     window = OpenGLViewer(
         input_path,

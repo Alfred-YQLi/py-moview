@@ -51,6 +51,38 @@ python -m pip install -e ".[gui]"
 Core batch operation requires `numpy` and `scikit-image`. The GUI additionally
 requires `PyQt6`, `PyOpenGL`, and `pyqtgraph`.
 
+### Linux OpenGL
+
+The GUI requires a desktop OpenGL context. Before creating `QApplication`,
+MOview requests desktop OpenGL 2.1 with 8-bit RGBA, a 24-bit depth buffer, an
+8-bit stencil buffer, and double buffering. This format works with hardware
+drivers and Mesa software rendering such as llvmpipe.
+
+For an X11 session, verify the display and renderer with:
+
+```bash
+echo "$DISPLAY"
+glxinfo -B
+```
+
+`Qt: Session management error` is an independent ICE session warning, not an
+OpenGL failure. It can be omitted for one launch without changing rendering:
+
+```bash
+env -u SESSION_MANAGER moview /path/to/wavefunction.fch
+```
+
+To request Mesa software rendering explicitly, use:
+
+```bash
+env -u SESSION_MANAGER LIBGL_ALWAYS_SOFTWARE=1 moview /path/to/wavefunction.fch
+```
+
+If Qt still reports a GLX configuration error, enable its OpenGL diagnostics
+with `QT_LOGGING_RULES="qt.qpa.gl=true"`. This usually indicates that the Qt
+installation is loading a different GLX/Mesa library stack from `glxinfo`.
+Batch mode remains available without Qt or OpenGL.
+
 ## Running MOview
 
 ### Python module
@@ -297,7 +329,8 @@ so no application cap does not imply every value fits the current machine.
    overrides.
 3. GUI mode enables the narrow macOS native-log filter and imports
    `moview.gui.main_window.run_gui()` lazily.
-4. `run_gui()` creates `QApplication` and `OpenGLViewer` with `AppConfig`.
+4. `moview.gui.opengl_context` installs one explicit surface format before
+   `run_gui()` creates `QApplication` and `OpenGLViewer` with `AppConfig`.
 5. `moview.gui.layout` builds the controls, orbital table, and OpenGL views.
 6. `load_wavefunction()` submits parsing to a worker thread.
 7. `moview.parsers` detects FCHK or Molden and dispatches the parser.
@@ -342,6 +375,7 @@ so no application cap does not imply every value fits the current machine.
 | `moview/gui/main_window.py` | Async jobs, caches, scene state, comparison, and camera. |
 | `moview/gui/layout.py` | Compute/Display controls, orbital table, header, and canvas. |
 | `moview/gui/gl_view.py` | OpenGL materials, molecule geometry, labels, axes, and input. |
+| `moview/gui/opengl_context.py` | Portable desktop Qt OpenGL surface format. |
 | `moview/gui/native_stderr.py` | Exact harmless macOS TSM/IMK/Qt keymapper filtering while preserving other stderr. |
 | `tests/test_config.py` | Config discovery, validation, colors, and CLI precedence. |
 | `tests/test_smoke.py` | Core API, labels, Grid, launcher, parser errors, and stderr filtering. |

@@ -14,7 +14,7 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
-    from PyQt6 import QtCore, QtTest, QtWidgets
+    from PyQt6 import QtCore, QtGui, QtTest, QtWidgets
 
     from moview.constants import DEFAULT_ISOVALUE
     from moview.config import AppConfig, ColorPreset, DEFAULT_CONFIG
@@ -29,6 +29,14 @@ try:
         mesh_item,
     )
     from moview.gui.main_window import OpenGLViewer
+    from moview.gui.opengl_context import (
+        COLOR_BUFFER_BITS,
+        DEPTH_BUFFER_BITS,
+        OPENGL_VERSION,
+        STENCIL_BUFFER_BITS,
+        configure_default_opengl_surface_format,
+        create_opengl_surface_format,
+    )
     from moview.gui.presentation import GRID_PREFETCH_DEBOUNCE_MS
     from moview.surface import SurfaceMesh, _empty_mesh
     from moview.wavefunction import Shell, Wavefunction
@@ -93,6 +101,37 @@ class GuiBehaviorTests(unittest.TestCase):
         self.assertFalse(hasattr(self.viewer, "auto_iso_check"))
         self.viewer.set_iso_slider_value(0.051234, update_text=True)
         self.assertEqual(self.viewer.iso_value(), 0.051234)
+
+    def test_opengl_surface_format_is_explicit_and_portable(self) -> None:
+        self.assertFalse(configure_default_opengl_surface_format())
+        formats = (
+            create_opengl_surface_format(),
+            QtGui.QSurfaceFormat.defaultFormat(),
+            self.viewer.view.format(),
+        )
+        for surface_format in formats:
+            with self.subTest(surface_format=surface_format):
+                self.assertEqual(surface_format.version(), OPENGL_VERSION)
+                self.assertEqual(
+                    surface_format.profile(),
+                    QtGui.QSurfaceFormat.OpenGLContextProfile.NoProfile,
+                )
+                self.assertEqual(
+                    surface_format.renderableType(),
+                    QtGui.QSurfaceFormat.RenderableType.OpenGL,
+                )
+                self.assertEqual(surface_format.redBufferSize(), COLOR_BUFFER_BITS)
+                self.assertEqual(surface_format.greenBufferSize(), COLOR_BUFFER_BITS)
+                self.assertEqual(surface_format.blueBufferSize(), COLOR_BUFFER_BITS)
+                self.assertEqual(surface_format.alphaBufferSize(), COLOR_BUFFER_BITS)
+                self.assertEqual(surface_format.depthBufferSize(), DEPTH_BUFFER_BITS)
+                self.assertEqual(surface_format.stencilBufferSize(), STENCIL_BUFFER_BITS)
+                self.assertEqual(surface_format.samples(), 0)
+                self.assertEqual(
+                    surface_format.swapBehavior(),
+                    QtGui.QSurfaceFormat.SwapBehavior.DoubleBuffer,
+                )
+                self.assertEqual(surface_format.swapInterval(), 1)
 
     def test_configured_resources_and_display_defaults_are_applied(self) -> None:
         colors = DEFAULT_CONFIG.colors + (ColorPreset("Mint", (40, 210, 160)),)

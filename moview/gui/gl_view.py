@@ -24,10 +24,15 @@ _GUI_IMPORT_ERROR: ModuleNotFoundError | None = None
 try:
     from PyQt6 import QtCore, QtGui, QtOpenGL, QtWidgets
 
+    from .opengl_context import (
+        configure_default_opengl_surface_format,
+        create_opengl_surface_format,
+    )
+
+    configure_default_opengl_surface_format()
+
     from OpenGL import GL
     from OpenGL.GL import shaders as gl_shaders
-
-    QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
 
     import pyqtgraph as pg
     import pyqtgraph.opengl as gl
@@ -1193,6 +1198,7 @@ def remove_gl_item(view, item) -> None:
 class OrbitalGLView(gl.GLViewWidget):
     def __init__(self, owner: "OpenGLViewer", slot: "SceneSlot | None" = None):
         super().__init__()
+        self.setFormat(create_opengl_surface_format())
         self.owner = owner
         self.slot = slot
         self.setBackgroundColor(SCENE_BACKGROUND_HEX)
