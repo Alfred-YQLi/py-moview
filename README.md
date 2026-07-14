@@ -65,6 +65,23 @@ update the repository and repeat the `.[gui]` installation. Do not install an
 unconstrained PyQt6 separately on CentOS/RHEL 8: PyQt6 6.10 and newer Linux
 x86-64 wheels require a newer glibc baseline.
 
+### CentOS/RHEL 8 native GUI libraries
+
+The PyQt6 wheel includes Qt, but the Qt X11 `xcb` platform plugin still uses
+native libraries supplied by the operating system. On CentOS/RHEL 8,
+`libxcb-cursor.so.0` is provided by the EPEL `xcb-util-cursor` package:
+
+```bash
+sudo dnf install epel-release
+sudo dnf install xcb-util-cursor
+rpm -q xcb-util-cursor
+```
+
+These are system packages and cannot be installed by `pip`. MOview checks the
+linked libraries of Qt's `libqxcb.so` before creating `QApplication`. If any
+are missing, it exits normally and prints the missing library names and the
+appropriate `dnf` or `apt` command instead of allowing Qt to abort.
+
 ### Linux OpenGL
 
 The GUI requires a desktop OpenGL context. Before creating `QApplication`,
@@ -341,8 +358,9 @@ so no application cap does not imply every value fits the current machine.
 1. `moview/__main__.py` calls `moview.cli.main()`.
 2. `moview.cli` loads config first, builds argument defaults, and applies CLI
    overrides.
-3. GUI mode enables the narrow macOS native-log filter and imports
-   `moview.gui.main_window.run_gui()` lazily.
+3. GUI mode imports `moview.gui.main_window.run_gui()` lazily; Linux checks the
+   native xcb plugin dependencies before `QApplication`, while macOS enables
+   the narrow native-log filter.
 4. `moview.gui.opengl_context` installs one explicit surface format before
    `run_gui()` creates `QApplication` and `OpenGLViewer` with `AppConfig`.
 5. `moview.gui.layout` builds the controls, orbital table, and OpenGL views.
@@ -390,9 +408,10 @@ so no application cap does not imply every value fits the current machine.
 | `moview/gui/layout.py` | Compute/Display controls, orbital table, header, and canvas. |
 | `moview/gui/gl_view.py` | OpenGL materials, molecule geometry, labels, axes, and input. |
 | `moview/gui/opengl_context.py` | Portable desktop Qt OpenGL surface format. |
+| `moview/gui/linux_qt.py` | Linux xcb shared-library preflight and package-manager guidance. |
 | `moview/gui/native_stderr.py` | Exact harmless macOS TSM/IMK/Qt keymapper filtering while preserving other stderr. |
 | `tests/test_config.py` | Config discovery, validation, colors, and CLI precedence. |
-| `tests/test_smoke.py` | Core API, labels, Grid, launcher, parser errors, and stderr filtering. |
+| `tests/test_smoke.py` | Core API, Linux Qt preflight, labels, Grid, launcher, parser errors, and stderr filtering. |
 | `tests/test_gui.py` | GUI defaults, caches, pre-rendering, async behavior, and appearance. |
 | `tests/test_wavefunctions.py` | Optional FCHK/Molden fixture integration and low-Grid surface tests. |
 

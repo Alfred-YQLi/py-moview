@@ -50,6 +50,22 @@ python -c 'from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR; print("PyQ
 `.[gui]` 安装。不要在 CentOS/RHEL 8 中单独安装未限制版本的 PyQt6；PyQt6
 6.10 及更新版本的 Linux x86-64 wheel 要求更高版本的 glibc。
 
+### CentOS/RHEL 8 原生 GUI 库
+
+PyQt6 wheel 包含 Qt，但 Qt 用于 X11 的 `xcb` 平台插件仍依赖操作系统提供的
+原生动态库。在 CentOS/RHEL 8 中，`libxcb-cursor.so.0` 由 EPEL 的
+`xcb-util-cursor` 软件包提供：
+
+```bash
+sudo dnf install epel-release
+sudo dnf install xcb-util-cursor
+rpm -q xcb-util-cursor
+```
+
+这些是系统软件包，不能通过 `pip` 安装。MOview 会在创建 `QApplication` 前
+检查 Qt `libqxcb.so` 的动态链接依赖；发现缺失库时，程序会正常退出，并列出
+缺失库及相应的 `dnf` 或 `apt` 命令，不再由 Qt 直接中止并产生核心转储。
+
 ### Linux OpenGL
 
 GUI 需要桌面 OpenGL context。MOview 会在创建 `QApplication` 前请求桌面
@@ -270,7 +286,8 @@ Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内
 
 1. `moview/__main__.py` 调用 `moview.cli.main()`。
 2. `moview/cli.py` 先调用 `moview.config.load_config()`，再用配置值构造完整参数解析器；显式 CLI 参数覆盖配置。
-3. GUI 模式启用 macOS 原生 stderr 过滤，再导入 `moview.gui.main_window.run_gui()`。
+3. GUI 模式懒加载 `moview.gui.main_window.run_gui()`；Linux 在创建
+   `QApplication` 前检查 xcb 原生依赖，macOS 则启用原生 stderr 过滤。
 4. `moview.gui.opengl_context` 在 `run_gui()` 创建 `QApplication` 和 `OpenGLViewer` 前设置统一 surface format，资源预算、默认样式和颜色随 `AppConfig` 注入。
 5. `moview/gui/layout.py` 创建侧栏、Compute/Display 控件、颜色选择器、轨道表和 OpenGL 视图区。
 6. `OpenGLViewer.load_wavefunction()` 在线程池中调用 `moview.parsers.parse_wavefunction()`，避免主线程卡顿。
@@ -340,6 +357,7 @@ Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内
 | `moview/gui/layout.py` | Compute/Display 控件、颜色选择器、轨道表、紧凑信息栏和画布布局。 |
 | `moview/gui/gl_view.py` | OpenGL 视图、fog shader、表面材质、分子几何、透视贴附/浮动批量标签和鼠标交互。 |
 | `moview/gui/opengl_context.py` | 设置可移植的桌面 Qt OpenGL surface format。 |
+| `moview/gui/linux_qt.py` | Linux xcb 动态库预检及系统软件包安装提示。 |
 | `moview/gui/widgets.py` | 数值滑块、角落坐标轴、视图宿主和 `SceneSlot` 状态。 |
 | `moview/gui/presentation.py` | 显示风格/标签选项、高 Grid 阈值和警告文本。 |
 | `moview/gui/styles.py` | Qt 样式表和 GUI 配色。 |
@@ -351,7 +369,7 @@ Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内
 | 文件 | 作用 |
 | --- | --- |
 | `tests/test_config.py` | 配置发现、覆盖优先级、资源/颜色解析、错误输入和 CLI 默认值。 |
-| `tests/test_smoke.py` | 常量、标签、真实高 Grid 规格、Molden 错误输入和 macOS 日志过滤。 |
+| `tests/test_smoke.py` | 常量、Linux Qt 预检、标签、真实高 Grid 规格、Molden 错误输入和 macOS 日志过滤。 |
 | `tests/test_gui.py` | GUI 默认值、资源配置、颜色/标题同步、无上限 Grid、预渲染、缓存、异步加载、快捷键和显示样式。无 GUI 依赖时自动跳过。 |
 | `tests/test_wavefunctions.py` | 可选的 FCHK/Molden 样例集成测试和低 Grid 等值面测试。 |
 

@@ -50,6 +50,7 @@ from .gl_view import (
     update_fog_shader_params,
 )
 from .layout import MainWindowLayoutMixin
+from .linux_qt import linux_qt_platform_issue
 from .presentation import (
     GRID_PREFETCH_DEBOUNCE_MS,
     HIGH_GRID_WARNING_THRESHOLD,
@@ -1849,6 +1850,10 @@ def run_gui(
     app = QtWidgets.QApplication.instance()
     owned_app = app is None
     if app is None:
+        platform_issue = linux_qt_platform_issue()
+        if platform_issue is not None:
+            print(platform_issue, file=sys.stderr)
+            return 1
         app = QtWidgets.QApplication(sys.argv[:1])
     window = OpenGLViewer(
         input_path,

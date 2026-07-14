@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import os
 import time
 import unittest
+from contextlib import redirect_stderr
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -28,7 +30,7 @@ try:
         build_molecule_geometry,
         mesh_item,
     )
-    from moview.gui.main_window import OpenGLViewer
+    from moview.gui.main_window import OpenGLViewer, run_gui
     from moview.gui.opengl_context import (
         COLOR_BUFFER_BITS,
         DEPTH_BUFFER_BITS,
@@ -132,6 +134,20 @@ class GuiBehaviorTests(unittest.TestCase):
                     QtGui.QSurfaceFormat.SwapBehavior.DoubleBuffer,
                 )
                 self.assertEqual(surface_format.swapInterval(), 1)
+
+    def test_linux_qt_preflight_stops_before_qapplication(self) -> None:
+        error = io.StringIO()
+        with (
+            patch("moview.gui.main_window.linux_qt_platform_issue", return_value="missing xcb"),
+            patch("moview.gui.main_window.QtWidgets.QApplication") as application,
+            redirect_stderr(error),
+        ):
+            application.instance.return_value = None
+            result = run_gui(None, 81, DEFAULT_ISOVALUE, 4.0, 1, False)
+
+        self.assertEqual(result, 1)
+        self.assertIn("missing xcb", error.getvalue())
+        application.assert_not_called()
 
     def test_configured_resources_and_display_defaults_are_applied(self) -> None:
         colors = DEFAULT_CONFIG.colors + (ColorPreset("Mint", (40, 210, 160)),)
