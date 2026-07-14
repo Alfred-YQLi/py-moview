@@ -48,7 +48,22 @@ python -m pip install -e ".[gui]"
 ```
 
 Core batch operation requires `numpy` and `scikit-image`. The GUI additionally
-requires `PyQt6`, `PyOpenGL`, and `pyqtgraph`.
+requires `PyQt6`, `PyOpenGL`, and `pyqtgraph`. The `gui` extra constrains PyQt6
+to `>=6.7.1,<6.10` so that Linux x86-64 installations retain a binary wheel
+compatible with glibc 2.28, as used by CentOS/RHEL 8. A normal installation
+selects PyQt6 6.9.1 and its compatible Qt 6.9 runtime; no Qt SDK or `qmake` is
+required.
+
+Confirm the installed Qt versions with:
+
+```bash
+python -c 'from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR; print("PyQt", PYQT_VERSION_STR, "Qt", QT_VERSION_STR)'
+```
+
+If an installation attempts to download a `PyQt6-*.tar.gz` source archive,
+update the repository and repeat the `.[gui]` installation. Do not install an
+unconstrained PyQt6 separately on CentOS/RHEL 8: PyQt6 6.10 and newer Linux
+x86-64 wheels require a newer glibc baseline.
 
 ### Linux OpenGL
 

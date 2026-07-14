@@ -63,8 +63,8 @@ def _marching_mesh(field: np.ndarray, level: float, origin: np.ndarray, spacing:
     except ModuleNotFoundError as exc:  # pragma: no cover - user-facing dependency guard
         print(
             "Missing dependency: scikit-image\n"
-            "Install with:\n"
-            "pip install numpy scikit-image pyqtgraph PyQt6 PyOpenGL",
+            "Install MOview's core dependencies from the repository root with:\n"
+            "python -m pip install -e .",
             file=sys.stderr,
         )
         raise SystemExit(1) from exc

@@ -60,8 +60,8 @@ def _require_gui_dependencies() -> None:
     missing = _GUI_IMPORT_ERROR.name or "PyQtGraph/OpenGL dependency"
     print(
         f"Missing dependency: {missing}\n"
-        "Install with:\n"
-        "pip install numpy scikit-image pyqtgraph PyQt6 PyOpenGL",
+        "Install MOview's GUI dependencies from the repository root with:\n"
+        'python -m pip install -e ".[gui]"',
         file=sys.stderr,
     )
     raise SystemExit(1) from _GUI_IMPORT_ERROR

@@ -34,7 +34,21 @@ conda activate wavefunction
 python -m pip install -e ".[gui]"
 ```
 
-核心依赖为 `numpy` 和 `scikit-image`。GUI 还需要 `PyQt6`、`PyOpenGL` 和 `pyqtgraph`。
+核心依赖为 `numpy` 和 `scikit-image`。GUI 还需要 `PyQt6`、`PyOpenGL` 和
+`pyqtgraph`。`gui` extra 将 PyQt6 限定为 `>=6.7.1,<6.10`，从而在 Linux
+x86-64 上保留兼容 glibc 2.28（CentOS/RHEL 8 所用版本）的二进制 wheel。
+正常安装会选择 PyQt6 6.9.1 及与之匹配的 Qt 6.9 运行库，不需要安装 Qt SDK
+或 `qmake`。
+
+可用以下命令确认实际安装的版本：
+
+```bash
+python -c 'from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR; print("PyQt", PYQT_VERSION_STR, "Qt", QT_VERSION_STR)'
+```
+
+如果安装时开始下载 `PyQt6-*.tar.gz` 源码包，请先更新当前仓库，再重新执行
+`.[gui]` 安装。不要在 CentOS/RHEL 8 中单独安装未限制版本的 PyQt6；PyQt6
+6.10 及更新版本的 Linux x86-64 wheel 要求更高版本的 glibc。
 
 ### Linux OpenGL
 
