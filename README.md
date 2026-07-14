@@ -44,7 +44,6 @@ Python 3.10 or newer is required. Python 3.12 is the primary tested version.
 ```bash
 git clone https://github.com/Alfred-YQLi/py-moview.git
 cd py-moview
-conda activate wavefunction
 python -m pip install -e ".[gui]"
 ```
 
