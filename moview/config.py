@@ -9,8 +9,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from .constants import DEFAULT_ISOVALUE, DEFAULT_PREFETCH_WORKERS
-from .grid import DEFAULT_GRID_CHUNK_POINTS, MIN_GRID_SIZE
+from .constants import (
+    DEFAULT_GRID_CHUNK_POINTS,
+    DEFAULT_GRID_SIZE,
+    DEFAULT_ISOVALUE,
+    DEFAULT_MARGIN_BOHR,
+    MIN_GRID_SIZE,
+)
 
 
 CONFIG_FILENAME = "moview.ini"
@@ -20,6 +25,7 @@ SURFACE_STYLE_VALUES = frozenset(("glass", "solid", "wireframe", "solid_edges"))
 ATOM_STYLE_VALUES = frozenset(("ball_stick", "space_filling", "licorice"))
 ATOM_LABEL_VALUES = frozenset(("off", "number", "element", "number_element"))
 ATOM_LABEL_PLACEMENT_VALUES = frozenset(("attached", "floating"))
+THEME_VALUES = frozenset(("system", "light", "dark"))
 
 DEFAULT_SURFACE_STYLE = "glass"
 DEFAULT_ATOM_STYLE = "ball_stick"
@@ -70,38 +76,20 @@ DEFAULT_COLOR_PRESETS = (
 
 @dataclass(frozen=True)
 class ResourceSettings:
-    basis_workers: int = DEFAULT_PREFETCH_WORKERS
-    background_jobs: int = 1
-    basis_cache_mib: int = 768
-    max_basis_cache_entry_mib: int = 640
-    render_cache_mib: int = 512
-    render_cache_entries: int = 240
-    prefetch_field_budget_mib: int = 192
-    max_prefetch_orbitals: int = 48
+    render_cache_mib: int = 256
+    render_cache_entries: int = 120
     grid_chunk_points: int = DEFAULT_GRID_CHUNK_POINTS
     surface_face_limit: int = 160_000
-
-    @property
-    def basis_cache_bytes(self) -> int:
-        return self.basis_cache_mib * MIB
-
-    @property
-    def max_basis_cache_entry_bytes(self) -> int:
-        return self.max_basis_cache_entry_mib * MIB
 
     @property
     def render_cache_bytes(self) -> int:
         return self.render_cache_mib * MIB
 
-    @property
-    def prefetch_field_budget_bytes(self) -> int:
-        return self.prefetch_field_budget_mib * MIB
-
 
 @dataclass(frozen=True)
 class RenderSettings:
-    grid: int = 81
-    margin_bohr: float = 4.0
+    grid: int = DEFAULT_GRID_SIZE
+    margin_bohr: float = DEFAULT_MARGIN_BOHR
     isovalue: float = DEFAULT_ISOVALUE
     surface_style: str = DEFAULT_SURFACE_STYLE
     atom_style: str = DEFAULT_ATOM_STYLE
@@ -119,6 +107,7 @@ class ViewSettings:
     sync_views: bool = True
     show_axes: bool = True
     auto_render: bool = True
+    theme: str = "system"
 
 
 @dataclass(frozen=True)
@@ -139,20 +128,21 @@ class AppConfig:
 
 DEFAULT_CONFIG = AppConfig()
 
-_RESOURCE_KEYS = frozenset(
+# Settings of the pre-0.3 pipeline (basis-grid cache, 48-orbital pre-render).
+# They are still accepted so old moview.ini files load, but have no effect.
+LEGACY_RESOURCE_KEYS = frozenset(
     (
         "basis_workers",
         "background_jobs",
         "basis_cache_mib",
         "max_basis_cache_entry_mib",
-        "render_cache_mib",
-        "render_cache_entries",
         "prefetch_field_budget_mib",
         "max_prefetch_orbitals",
-        "grid_chunk_points",
-        "surface_face_limit",
     )
 )
+_RESOURCE_KEYS = frozenset(
+    ("render_cache_mib", "render_cache_entries", "grid_chunk_points", "surface_face_limit")
+) | LEGACY_RESOURCE_KEYS
 _RENDER_KEYS = frozenset(
     (
         "grid",
@@ -168,7 +158,7 @@ _RENDER_KEYS = frozenset(
         "negative_color",
     )
 )
-_VIEW_KEYS = frozenset(("zoom", "sync_views", "show_axes", "auto_render"))
+_VIEW_KEYS = frozenset(("zoom", "sync_views", "show_axes", "auto_render", "theme"))
 _SECTIONS = frozenset(("resources", "render", "view", "colors"))
 
 
@@ -420,42 +410,6 @@ def load_config(
     colors = _parse_colors(parser, sections, path)
 
     resources = ResourceSettings(
-        basis_workers=_parse_int(
-            resource_values,
-            "basis_workers",
-            DEFAULT_CONFIG.resources.basis_workers,
-            minimum=1,
-            maximum=256,
-            section="resources",
-            path=path,
-        ),
-        background_jobs=_parse_int(
-            resource_values,
-            "background_jobs",
-            DEFAULT_CONFIG.resources.background_jobs,
-            minimum=1,
-            maximum=8,
-            section="resources",
-            path=path,
-        ),
-        basis_cache_mib=_parse_int(
-            resource_values,
-            "basis_cache_mib",
-            DEFAULT_CONFIG.resources.basis_cache_mib,
-            minimum=16,
-            maximum=1_048_576,
-            section="resources",
-            path=path,
-        ),
-        max_basis_cache_entry_mib=_parse_int(
-            resource_values,
-            "max_basis_cache_entry_mib",
-            DEFAULT_CONFIG.resources.max_basis_cache_entry_mib,
-            minimum=16,
-            maximum=1_048_576,
-            section="resources",
-            path=path,
-        ),
         render_cache_mib=_parse_int(
             resource_values,
             "render_cache_mib",
@@ -469,24 +423,6 @@ def load_config(
             resource_values,
             "render_cache_entries",
             DEFAULT_CONFIG.resources.render_cache_entries,
-            minimum=1,
-            maximum=100_000,
-            section="resources",
-            path=path,
-        ),
-        prefetch_field_budget_mib=_parse_int(
-            resource_values,
-            "prefetch_field_budget_mib",
-            DEFAULT_CONFIG.resources.prefetch_field_budget_mib,
-            minimum=16,
-            maximum=1_048_576,
-            section="resources",
-            path=path,
-        ),
-        max_prefetch_orbitals=_parse_int(
-            resource_values,
-            "max_prefetch_orbitals",
-            DEFAULT_CONFIG.resources.max_prefetch_orbitals,
             minimum=1,
             maximum=100_000,
             section="resources",
@@ -511,10 +447,6 @@ def load_config(
             path=path,
         ),
     )
-    if resources.max_basis_cache_entry_mib > resources.basis_cache_mib:
-        raise ConfigError(
-            f"{path}: max_basis_cache_entry_mib cannot exceed basis_cache_mib"
-        )
 
     render = RenderSettings(
         grid=_parse_int(
@@ -633,6 +565,14 @@ def load_config(
             view_values,
             "auto_render",
             DEFAULT_CONFIG.view.auto_render,
+            section="view",
+            path=path,
+        ),
+        theme=_parse_choice(
+            view_values,
+            "theme",
+            DEFAULT_CONFIG.view.theme,
+            THEME_VALUES,
             section="view",
             path=path,
         ),

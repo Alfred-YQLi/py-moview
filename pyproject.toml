@@ -4,24 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moview"
-version = "0.1.0"
-description = "Molecular orbital wavefunction parser and OpenGL isosurface viewer"
+version = "1.0.0"
+description = "Molecular orbital wavefunction reader (FCHK, Molden) and OpenGL isosurface viewer"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
+    "scipy",
     "scikit-image",
 ]
 
 [project.optional-dependencies]
 gui = [
-    "PyQt6>=6.7.1,<6.10",
+    # Linux x86-64: PyQt6 >= 6.10 wheels need a newer glibc than CentOS/RHEL 8.
+    "PyQt6>=6.7.1,<6.10; sys_platform == 'linux'",
+    "PyQt6>=6.7.1; sys_platform != 'linux'",
     "PyOpenGL",
-    "pyqtgraph",
+    "pyqtgraph>=0.13",
 ]
 
 [project.scripts]
 moview = "moview.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["moview*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

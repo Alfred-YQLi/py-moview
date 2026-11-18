@@ -62,8 +62,7 @@ Mint = 40, 210, 160
             )
             config = load_config(path)
 
-        self.assertEqual(config.resources.basis_workers, 4)
-        self.assertEqual(config.resources.background_jobs, 2)
+        self.assertFalse(hasattr(config.resources, "basis_workers"))  # legacy keys accepted, ignored
         self.assertEqual(config.resources.grid_chunk_points, 65_536)
         self.assertEqual(config.resources.surface_face_limit, 90_000)
         self.assertEqual(config.render.grid, 96)
@@ -104,14 +103,14 @@ Mint = 40, 210, 160
                     with self.assertRaisesRegex(ConfigError, message):
                         load_config(path)
 
-    def test_invalid_memory_relationship_is_rejected(self) -> None:
+    def test_legacy_resource_keys_still_load(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = self.write_config(
                 directory,
-                "[resources]\nbasis_cache_mib = 128\nmax_basis_cache_entry_mib = 256\n",
+                "[resources]\nbasis_cache_mib = 128\nmax_basis_cache_entry_mib = 256\n"
+                "prefetch_field_budget_mib = 64\nmax_prefetch_orbitals = 4\nrender_cache_mib = 64\n",
             )
-            with self.assertRaisesRegex(ConfigError, "cannot exceed"):
-                load_config(path)
+            self.assertEqual(load_config(path).resources.render_cache_mib, 64)
 
     def test_programmatic_color_presets_are_validated(self) -> None:
         with self.assertRaises(ConfigError):
@@ -142,7 +141,6 @@ isovalue = 0.04
         self.assertEqual(args.grid, 80)
         self.assertEqual(args.margin, 2.5)
         self.assertEqual(args.iso, 0.04)
-        self.assertEqual(args.prefetch_workers, 3)
         self.assertEqual(config.resources.grid_chunk_points, 32_768)
 
 

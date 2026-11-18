@@ -1,52 +1,60 @@
+"""MOview - molecular orbital wavefunction reader and OpenGL isosurface viewer.
+
+Package layout::
+
+    moview.core      numerics: Wavefunction model, basis evaluation, grids,
+                     isosurfaces, bonds, overlap/orthonormality checks
+    moview.parsers   FCHK and Molden readers
+    moview.gui       PyQt6/OpenGL application (imported lazily)
+    moview.cli       command line entry point (GUI and batch mode)
+"""
+
 from __future__ import annotations
 
-from . import cache as _cache
 from .config import AppConfig, ColorPreset, ConfigError, load_config
-from .constants import BOHR_TO_ANG, DEFAULT_PREFETCH_WORKERS, HARTREE_TO_EV, atom_symbol
-from .grid import (
-    BasisGrid,
+from .constants import BOHR_TO_ANG, HARTREE_TO_EV
+from .core import (
     GridSpec,
     OrbitalGrid,
-    compute_basis_grid,
+    Shell,
+    SurfaceMesh,
+    Wavefunction,
+    compute_bonds,
     compute_orbital_grid,
-    compute_orbital_grid_float32,
-    compute_orbital_grid_from_basis,
     compute_orbital_grids,
-    compute_orbital_grids_float32,
-    compute_orbital_grids_from_basis,
-    estimate_basis_grid_bytes,
+    extract_isosurfaces,
     make_grid_spec,
+    orthonormality,
+    overlap_matrix,
+    surface_for_orbital,
 )
+from .elements import atom_symbol
 from .parsers import detect_wavefunction_format, parse_wavefunction
-from .surface import SurfaceMesh, extract_isosurfaces, surface_for_orbital
-from .wavefunction import Wavefunction, Shell
+
+__version__ = "1.0.0"
 
 __all__ = [
-    "BOHR_TO_ANG",
     "AppConfig",
+    "BOHR_TO_ANG",
     "ColorPreset",
     "ConfigError",
-    "DEFAULT_PREFETCH_WORKERS",
-    "HARTREE_TO_EV",
-    "BasisGrid",
     "GridSpec",
-    "Wavefunction",
+    "HARTREE_TO_EV",
     "OrbitalGrid",
     "Shell",
     "SurfaceMesh",
+    "Wavefunction",
+    "__version__",
     "atom_symbol",
-    "compute_basis_grid",
+    "compute_bonds",
     "compute_orbital_grid",
-    "compute_orbital_grid_float32",
-    "compute_orbital_grid_from_basis",
     "compute_orbital_grids",
-    "compute_orbital_grids_float32",
-    "compute_orbital_grids_from_basis",
     "detect_wavefunction_format",
     "extract_isosurfaces",
-    "estimate_basis_grid_bytes",
-    "make_grid_spec",
     "load_config",
+    "make_grid_spec",
+    "orthonormality",
+    "overlap_matrix",
     "parse_wavefunction",
     "surface_for_orbital",
 ]

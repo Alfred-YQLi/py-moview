@@ -2,405 +2,156 @@
 
 [English](README.md) | **简体中文**
 
-MOview 是一个用 Python 编写的分子轨道波函数读取与 OpenGL 可视化程序。它可以读取 Gaussian formatted checkpoint（`.fchk`、`.fch`）和 Molden 文件，计算指定分子轨道在三维网格上的波函数值，提取正、负等值面，并同时显示分子结构、轨道表面、原子标签和坐标轴。
-
-程序同时提供 GUI 与批处理模式：GUI 用于交互式查看轨道，批处理模式用于解析检查、自动化测试和输出等值面统计信息。
+MOview 读取 Gaussian formatted checkpoint（`.fchk`/`.fch`）和 Molden 文件中的分子轨道，
+在三维网格上计算轨道值，并在交互式 OpenGL 窗口中同时显示正、负等值面与分子结构。
+批处理模式无需 GUI，并可检查文件是否被正确解析。
 
 ## 主要功能
 
-- 读取 Gaussian FCHK/FCH 与 Molden 波函数。
-- 显示 alpha/beta 轨道、能量、占据数、HOMO 和 LUMO。
-- 同时比较最多 9 个轨道，并同步或独立旋转视图。
-- 使用明确的正数等值面值绘制正、负波函数表面，默认值为 `0.05`。
-- 调整原子大小；默认比例为 `1.00x`。
-- 原子标签支持 `Off`、`Number`、`Element`、`Number + element`，例如 `1`、`Ca`、`1Ca`；标签字号可调。
-- 标签定位支持默认的 `Attached` 和兼容的 `Floating`：Attached 贴在原子三维坐标上并参与透视，Floating 始终显示在表层并可能有引导线。
-- 原子风格支持 `Ball & stick`、`Space filling`、`Licorice`。
-- 等值面风格支持 `Glass`、`Solid`、`Wireframe`、`Solid + edges`。
-- 正、负相颜色可从带色块的命名预设中独立选择；配置文件可修改预设 RGB 或添加新颜色。
-- Grid 不设应用层面的上限；当 Grid 大于 256 时，在计算前显示性能和内存警告。
-- 修改 Grid、Margin 或 Isovalue 后，程序会在输入停止 650 ms 后取消旧任务并重新预渲染附近轨道。
-- 大文件在工作线程中解析，避免阻塞 Qt 主界面。
-- 网格计算、等值面缓存和后台预取均有内存/分辨率保护。
+- 支持 Gaussian FCHK/FCH 与 Molden（S–H 壳层、SP 壳层、笛卡尔与球谐函数、限制性与非限制性）。
+- **自动识别 Molden 约定。** 不同程序对 Molden 格式中未明确规定的细节处理不同
+  （ORCA 的 `orca_2mkl` 会把原始高斯函数归一化因子乘进收缩系数，并翻转 |m| ≥ 3 的 f/g 函数符号）。
+  MOview 用解析重叠积分检查 MO 正交归一性（`C S Cᵀ = I`），自动选择正确的约定，
+  并在文件面板和 `--batch` 输出中说明。
+- 轨道表显示 HOMO/LUMO 标签（HOMO−n、LUMO+n）、占据数以及 Eh 和 eV 能量；
+  单击即渲染，⌘/Ctrl 或 Shift 多选可并排比较最多 9 个轨道，也可输入 `210-214`。
+- 等值面风格：Glass、Solid、Wireframe、Solid + edges；平滑法线、双面光照与深度雾化；正负相颜色可配置。
+- 原子风格：Ball and stick、Space filling、Licorice；成键判断使用完整的共价半径表；原子标签可贴附于三维原子或浮动显示。
+- 亮色/暗色主题：工具栏右侧的太阳/月亮菜单可选 System（默认，实时跟随系统外观）、Light、Dark。
+- 快速且省内存：利用高斯函数在 x、y、z 上可分离的性质（精确计算），三维轨道场只需一次矩阵乘法
+  （约 1000 个基函数时，Grid 64 约 10 ms，Grid 128 约 45 ms）。轨道按需渲染，只预渲染当前轨道的
+  前后两个轨道，因此 `A`/`D` 切换几乎即时；只改等值面值时只重跑 marching cubes。
+- 可将视图保存为 PNG；可把文件拖入窗口打开。
 
 ## 安装
 
-建议先进入用于运行 MOview 的 Conda 环境，再从项目根目录安装：
+需要 Python 3.10 或更新版本。在项目根目录、进入所用环境（例如 `conda activate wavefunction`）后执行：
 
 ```bash
-git clone https://github.com/Alfred-YQLi/py-moview.git
-cd py-moview
-conda activate wavefunction
-python -m pip install -e ".[gui]"
+python -m pip install ".[gui]"
 ```
 
-核心依赖为 `numpy` 和 `scikit-image`。GUI 还需要 `PyQt6`、`PyOpenGL` 和
-`pyqtgraph`。`gui` extra 将 PyQt6 限定为 `>=6.7.1,<6.10`，从而在 Linux
-x86-64 上保留兼容 glibc 2.28（CentOS/RHEL 8 所用版本）的二进制 wheel。
-正常安装会选择 PyQt6 6.9.1 及与之匹配的 Qt 6.9 运行库，不需要安装 Qt SDK
-或 `qmake`。
+开发时可改用 `python -m pip install -e ".[gui]"`（修改代码立即生效）。
+核心/批处理依赖 `numpy`、`scipy`、`scikit-image`；GUI 另需 `PyQt6`、`PyOpenGL`、`pyqtgraph`。
 
-可用以下命令确认实际安装的版本：
+在 Linux 上 `gui` extra 将 PyQt6 限定为 `>=6.7.1,<6.10`，其 x86-64 wheel 仍兼容 glibc 2.28
+（CentOS/RHEL 8）；其它平台使用最新 PyQt6。查看版本：
 
 ```bash
 python -c 'from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR; print("PyQt", PYQT_VERSION_STR, "Qt", QT_VERSION_STR)'
 ```
 
-如果安装时开始下载 `PyQt6-*.tar.gz` 源码包，请先更新当前仓库，再重新执行
-`.[gui]` 安装。不要在 CentOS/RHEL 8 中单独安装未限制版本的 PyQt6；PyQt6
-6.10 及更新版本的 Linux x86-64 wheel 要求更高版本的 glibc。
+### Linux 说明
 
-### CentOS/RHEL 8 原生 GUI 库
-
-PyQt6 wheel 包含 Qt，但 Qt 用于 X11 的 `xcb` 平台插件仍依赖操作系统提供的
-原生动态库。在 CentOS/RHEL 8 中，`libxcb-cursor.so.0` 由 EPEL 的
-`xcb-util-cursor` 软件包提供：
+PyQt6 wheel 自带 Qt，但 X11 的 `xcb` 插件需要若干系统库。MOview 在启动 Qt 前检查这些库，
+缺失时打印库名和对应的 `dnf`/`apt` 命令，而不是让 Qt 直接崩溃。CentOS/RHEL 8 中
+`libxcb-cursor.so.0` 来自 EPEL：
 
 ```bash
 sudo dnf install epel-release
 sudo dnf install xcb-util-cursor
-rpm -q xcb-util-cursor
 ```
 
-这些是系统软件包，不能通过 `pip` 安装。MOview 会在创建 `QApplication` 前
-检查 Qt `libqxcb.so` 的动态链接依赖；发现缺失库时，程序会正常退出，并列出
-缺失库及相应的 `dnf` 或 `apt` 命令，不再由 Qt 直接中止并产生核心转储。
-
-### Linux OpenGL
-
-GUI 需要桌面 OpenGL context。MOview 会在创建 `QApplication` 前请求桌面
-OpenGL 2.1、8-bit RGBA、24-bit depth buffer、8-bit stencil buffer 和双缓冲。
-该格式同时适用于硬件驱动和 llvmpipe 等 Mesa 软件渲染器。
-
-在 X11 会话中可先检查显示与渲染器：
+GUI 需要桌面 OpenGL 2.1 或更高（硬件驱动或 Mesa llvmpipe）。常用环境变量：
 
 ```bash
-echo "$DISPLAY"
-glxinfo -B
+env -u SESSION_MANAGER moview file.fch                         # 屏蔽 ICE 会话警告
+env -u SESSION_MANAGER LIBGL_ALWAYS_SOFTWARE=1 moview file.fch # 强制 Mesa 软件渲染
+QT_LOGGING_RULES="qt.qpa.gl=true" moview file.fch              # OpenGL 诊断信息
 ```
 
-`Qt: Session management error` 是独立的 ICE 会话警告，不是 OpenGL 初始化失败。
-可以只对本次启动移除该环境变量，不影响渲染：
+批处理模式不会导入 Qt 或 OpenGL。
+
+## 使用
 
 ```bash
-env -u SESSION_MANAGER moview /path/to/wavefunction.fch
+moview                                   # 打开窗口，然后点击 Open 或拖入文件
+moview path/to/wavefunction.fch          # 打开并渲染 HOMO
+moview file.molden.input --grid 96 --iso 0.03
+moview file.fch --no-auto-render
+moview file.fch --config my.ini
 ```
 
-需要明确使用 Mesa 软件渲染时，可运行：
+未安装时，可在项目根目录运行 `python -m moview ...`，或把 `bin/` 加入 `PATH`。
 
-```bash
-env -u SESSION_MANAGER LIBGL_ALWAYS_SOFTWARE=1 moview /path/to/wavefunction.fch
-```
+### 鼠标与键盘
 
-如果 Qt 仍报告 GLX 配置错误，可设置
-`QT_LOGGING_RULES="qt.qpa.gl=true"` 输出 OpenGL 初始化细节。这通常意味着 Qt
-实际加载的 GLX/Mesa 动态库与 `glxinfo` 使用的库不一致。批处理模式不依赖 Qt
-或 OpenGL，仍可正常使用。
-
-## 使用方法
-
-未安装软件包时，需要在项目根目录（包含 `pyproject.toml` 和 `moview/` 包目录的位置）运行：
-
-```bash
-cd /path/to/py-moview
-python -m moview /path/to/wavefunction.fch
-```
-
-安装为 editable package 后，也可以在任意目录使用控制台命令：
-
-```bash
-moview /path/to/wavefunction.fch
-```
-
-不要进入 `moview/` 包目录后执行 `python -m moview`，也不要把波函数路径放在 `python -m` 后当作模块名。`-m moview` 启动的是 Python 包，波函数路径是它后面的普通参数。
-
-### 直接加入 PATH
-
-仓库提供可执行入口 `bin/moview`。它会根据脚本自身位置找到项目，因此不安装 editable package 也可以从任意目录启动：
-
-```bash
-export PATH="/path/to/py-moview/bin:$PATH"
-moview /path/to/wavefunction.fch
-```
-
-启动前仍应激活安装了 GUI 依赖的 Conda 环境；入口使用当前 PATH 中的 `python3`。
-
-常用命令：
-
-```bash
-python -m moview --help
-python -m moview file.fch --fchk
-python -m moview file.molden.input --molden
-python -m moview file.fch --grid 96 --margin 4
-python -m moview file.fch --prefetch-workers 4
-python -m moview file.fch --config /path/to/custom.ini
-python -m moview file.fch --no-auto-render
-```
-
-### 批处理模式
-
-批处理模式不加载 PyQt/OpenGL，会输出文件格式、原子数、基函数数、轨道信息、实际网格形状、等值面值和三角形数量：
-
-```bash
-python -m moview file.fch --batch --grid 16 --orbital 1
-python -m moview file.molden.input --batch --grid 16 --orbital 1
-python -m moview file.fch --batch --spin beta --orbital 52 --grid 64 --iso 0.03 --margin 4
-```
-
-批处理模式的轨道编号从 1 开始。Grid 最小值为 8，Margin 不能为负数，Isovalue 必须是有限正数且默认为 `0.05`。Grid 大于 256 时会在 stderr 输出性能警告，但批处理仍按请求继续计算。
-
-## Molden 兼容性
-
-MOview 读取 [Molden 官方格式](https://www.theochem.ru.nl/molden/molden_format.html)
-中的 `[Atoms]`、`[GTO]` 和 `[MO]` 段。原子坐标可使用原子单位或埃，基组支持
-`S` 到 `G` 壳层、组合 `SP` 壳层以及 D/F/G 的 Cartesian 和 spherical
-约定；分子轨道支持 alpha、beta 自旋和稀疏的带编号系数。
-
-程序以流式方式把 `[MO]` 段读入系数矩阵，不会把大型 Molden 文件的数百万行
-源文本同时保留在内存中。ORCA 的 `orca_2mkl` 等工具生成的 Molden 文件可以直接打开。
-
-## 配置文件
-
-项目根目录提供 `moview.example.ini` 模板。复制为用户专用的 `moview.ini` 后再修改；`moview.ini` 已被 Git 忽略，不会意外提交机器相关的核心数或内存设置：
-
-```bash
-cp moview.example.ini moview.ini
-```
-
-程序按以下顺序寻找配置，找到第一个后停止：
-
-1. 命令行 `--config PATH`。
-2. 环境变量 `MOVIEW_CONFIG`。
-3. 当前目录的 `moview.ini`。
-4. macOS 的 `~/Library/Application Support/MOview/config.ini`。
-5. `$XDG_CONFIG_HOME/moview/config.ini`，默认是 `~/.config/moview/config.ini`。
-6. 项目根目录的 `moview.ini`。
-
-显式命令行参数优先于配置，例如 `--grid 96` 会覆盖 `[render] grid`。没有找到配置文件时使用相同的内置默认值；修改配置后需要重新启动程序。
-
-### 资源参数
-
-`[resources]` 中的内存单位均为 MiB：
-
-| 参数 | 作用 |
+| 操作 | 方式 |
 | --- | --- |
-| `basis_workers` | 构建缓存 BasisGrid 时使用的线程数。 |
-| `background_jobs` | 同时运行的后台预渲染批次数；默认 1。 |
-| `basis_cache_mib` | BasisGrid 缓存总预算。 |
-| `max_basis_cache_entry_mib` | 单个 BasisGrid 可进入缓存的最大大小，不能超过总预算。 |
-| `render_cache_mib` | 轨道标量场和等值面缓存总预算。 |
-| `render_cache_entries` | 渲染缓存条目数的附加上限。 |
-| `prefetch_field_budget_mib` | 后台预渲染可规划的标量场总预算。 |
-| `max_prefetch_orbitals` | 一次预渲染最多排队的轨道数。 |
-| `grid_chunk_points` | 分块计算一次处理的网格点数；较小值降低临时内存，较大值可能提高吞吐。 |
-| `surface_face_limit` | 每个正/负相上传到 OpenGL 的最大三角形数。 |
+| 旋转 | 左键拖动、方向键 |
+| 绕视线旋转 | 右键拖动 |
+| 平移 | Shift + 左键拖动、中键拖动 |
+| 缩放 | 滚轮、`+` / `-` |
+| 上一个 / 下一个轨道 | `A` / `D`，工具栏 ‹ › |
+| 旋转中心 | 按 `C` 后点击原子（`Esc` 取消） |
+| 重置视图 | `R` |
+| 打开 / 渲染 / 保存图片 | ⌘/Ctrl `O`、⌘/Ctrl `R`、⌘/Ctrl `S` |
 
-`background_jobs` 只改变调度并发度，不会绕过 `prefetch_field_budget_mib`。极端参数仍受实际 CPU、内存和显存限制。
+在文本框中输入时不会触发这些快捷键。
 
-### 默认显示与颜色
+### 设置面板
 
-`[render]` 可设置默认 Grid、Margin、Isovalue、表面/原子风格、原子大小、标签内容、`label_placement = attached|floating` 和正负相颜色；`[view]` 可设置 Zoom、视图同步、坐标轴和自动首帧渲染。
+- **Isosurface**：等值面值（对数滑块或精确输入，绘制 ±值）、最长边网格点数、盒子边距（bohr）。
+  下方显示网格形状、点数与间距。Grid 大于 256 时会先显示内存估计并请求确认。
+- **Appearance**：等值面风格、+ψ/−ψ 颜色、原子风格与大小、标签（编号、元素或两者）及其位置和字号。
+  外观修改不会重新计算轨道。
+- **View**：比较视图同步旋转、坐标轴。
 
-`[colors]` 使用“名称 + 0 到 255 的 RGB”定义颜色。同名条目修改内置预设，新名称会追加到 GUI 选择器：
-
-```ini
-[render]
-positive_color = Mint
-negative_color = Violet
-
-[colors]
-Red = 255, 64, 64
-Mint = 40, 210, 160
-```
-
-颜色引用不区分大小写，但 GUI 和顶部图例使用配置中定义的名称。非法 RGB、未知设置、未知颜色和矛盾的内存预算会在启动时给出明确错误。
-
-## GUI 操作
-
-左侧面板始终保留文件信息、HOMO/LUMO、比较输入和轨道表。设置被分成两个标签页。
-
-### Compute
-
-- `Spin`：在 unrestricted 波函数中选择 alpha 或 beta。
-- `Grid`：最长方向上的目标网格点数；实际三维形状根据分子包围盒比例生成。
-- `Margin / bohr`：分子包围盒外扩距离。
-- `Isovalue`：正数等值面值；默认 `0.05`，可用滑块或数值输入修改。
-
-修改 Grid、Margin 或 Isovalue 时，已失效的后台预渲染会立即取消；输入停止 650 ms 后，程序按新参数重新预渲染。Grid 大于 256 时，预渲染开始前也会先显示性能确认框。
-
-### Display
-
-- `Surface`：切换 Glass、Solid、Wireframe、Solid + edges。
-- `+ phase` / `- phase`：两个带色块选择器分别设置正、负波函数相位颜色；只重建 OpenGL 显示项。
-- `Atoms`：切换 Ball & stick、Space filling、Licorice。
-- `Atom size`：缩放原子半径，不改变键半径，也不会重新计算轨道。
-- `Labels` 左侧选择器：关闭标签，或显示编号、元素、编号+元素。
-- `Labels` 右侧选择器：`Attached` 将标签贴在原子前表面，随原子旋转并按距离产生透视缩放，且可被更近的几何体遮挡；`Floating` 使用屏幕避让和引导线，适合标签密集时阅读。
-- `Label size`：调整标签字号。
-- `Zoom`：调整视图缩放。
-- `Sync views`：比较多个轨道时同步旋转与缩放。
-- `Axes`：显示或隐藏右下角坐标轴。
-
-外观设置只重建轻量的 OpenGL 显示项。切换原子大小、原子风格、标签内容、标签定位、标签字号、等值面风格或相位颜色，不会重新解析文件、计算轨道网格或运行 marching cubes。Attached 模式把全部标签合并为一个纹理图集和一次 OpenGL 绘制；标签关闭时不创建任何标签资源。
-
-视图区顶部使用两行紧凑信息栏：第一行显示轨道、占据数和能量，第二行显示 Isovalue、Grid 以及带色块的正负相颜色名称。比较模式中每个子视图只保留一行轨道摘要。
-
-### 轨道比较
-
-`Compare` 输入使用从 1 开始的轨道编号，支持逗号、空格和范围：
-
-```text
-45,46,47
-45 46 47
-45-49
-49-45
-```
-
-### 快捷键
-
-- `A` / `D`：选择前一个/后一个轨道并延迟渲染。
-- 方向键：旋转当前视图。
-- `+` / `-`：缩放。
-- `C`：进入旋转中心选择模式，然后点击原子。
-
-当焦点位于轨道表、输入框、下拉框、数值框或滑块上时，全局快捷键不会抢占这些控件的键盘操作。
-
-## Grid 与性能
-
-Grid 表示分子包围盒最长轴上的点数。计算量和最终标量场内存近似随 Grid 的三次方增长，因此“没有软件上限”并不代表任意值都能在当前机器内存中完成。
-
-- GUI 在 Grid 大于 256 时弹出一次确认框，并显示实际三维点数和单个 float32 标量场的估算内存。
-- 同一个 Grid 值确认后，当前文件会话中不重复弹窗；切换文件后重新确认。
-- 默认情况下，预计完整 `BasisGrid` 不超过 640 MiB 时，GUI 使用基函数缓存，以保持低分辨率和多轨道切换速度；阈值可在配置中修改。
-- 超过该阈值时，GUI 使用 float32 分块、多轨道批量计算，不构造 `n_basis x n_points` 的巨型矩阵。
-- 默认基函数缓存总预算为 768 MiB，轨道/等值面缓存总预算为 512 MiB。
-- 后台预渲染不使用固定 Grid 截止值。默认最多处理 48 个 HOMO/LUMO 附近轨道，并按 192 MiB 标量场预算动态减少任务数。
-- 当单个标量场已经超过 192 MiB 时，程序跳过后台预渲染，但仍允许用户通过 `Render` 主动计算。
-- 已缓存轨道只在等值面值变化时重新运行 marching cubes，不会重复计算波函数标量场。
-- 异步计算绑定到当前波函数文件代次；切换文件后，旧任务不能写入新文件的基函数缓存。
-- 默认关闭原子标签，因此新增标签布局不会影响默认旋转性能。
-
-## 主程序工作流程
-
-### GUI 调用顺序
-
-1. `moview/__main__.py` 调用 `moview.cli.main()`。
-2. `moview/cli.py` 先调用 `moview.config.load_config()`，再用配置值构造完整参数解析器；显式 CLI 参数覆盖配置。
-3. GUI 模式懒加载 `moview.gui.main_window.run_gui()`；Linux 在创建
-   `QApplication` 前检查 xcb 原生依赖，macOS 则启用原生 stderr 过滤。
-4. `moview.gui.opengl_context` 在 `run_gui()` 创建 `QApplication` 和 `OpenGLViewer` 前设置统一 surface format，资源预算、默认样式和颜色随 `AppConfig` 注入。
-5. `moview/gui/layout.py` 创建侧栏、Compute/Display 控件、颜色选择器、轨道表和 OpenGL 视图区。
-6. `OpenGLViewer.load_wavefunction()` 在线程池中调用 `moview.parsers.parse_wavefunction()`，避免主线程卡顿。
-7. `moview/parsers/__init__.py` 检测格式并分派给 `FCHKParser` 或 `MoldenParser`。
-8. 解析器构造 `moview.wavefunction.Wavefunction`，其中包含原子、基组壳层、能量、占据数和 MO 系数矩阵。
-9. `moview.analysis.compute_bonds()` 根据共价半径和原子距离建立键列表。
-10. `populate_orbitals()` 填充轨道表，并选择默认 HOMO。
-11. `render_selected()` 解析单轨道或比较轨道，检查高 Grid 警告并查询轨道缓存。
-12. 小型网格通过 `compute_basis_grid()` 与 `compute_orbital_grid_from_basis()` 计算；大型网格通过 `compute_orbital_grid_float32()` 或 `compute_orbital_grids_float32()` 分块计算。
-13. `moview.surface.extract_isosurfaces()` 使用 marching cubes 生成正、负 `SurfaceMesh`。
-14. `moview.gui.gl_view` 把 `SurfaceMesh`、原子和键转换为 OpenGL 项；Attached 标签使用单个深度测试的纹理图集批次，Floating 标签使用单次 QPainter 避让绘制。
-15. `SceneSlot` 保存每个比较视图的网格、表面、旋转、相机和显示项；主窗口更新标题、状态和缓存。
-16. 后台按内存预算预渲染 HOMO/LUMO 附近轨道；Grid、Margin 或 Isovalue 改动后通过防抖计时器重启，前台渲染始终优先。
-
-### 批处理调用顺序
-
-1. `moview.cli.main()` 加载配置，用配置构造默认参数并校验显式 CLI 覆盖值。
-2. `run_batch()` 调用 `parse_wavefunction()` 返回 `Wavefunction`。
-3. `moview.grid.compute_orbital_grid()` 按配置的 `grid_chunk_points` 分块生成点，并以 float64 计算指定轨道。
-4. `extract_isosurfaces()` 生成正、负等值面。
-5. `run_batch()` 打印轨道、网格和三角形统计。
-
-## 目录与模块说明
-
-### 包入口与数据模型
-
-| 文件 | 作用 |
-| --- | --- |
-| `bin/moview` | 可直接加入 PATH 或建立符号链接的源码入口。 |
-| `moview/__init__.py` | 对外导出核心数据结构、解析、网格和表面 API。 |
-| `moview/__main__.py` | `python -m moview` 的包入口。 |
-| `moview.example.ini` | 可复制的资源、渲染、视图和命名颜色配置模板。 |
-| `moview/cli.py` | 配置优先加载、参数解析、批处理、高 Grid CLI 警告和 GUI 懒加载。 |
-| `moview/config.py` | 配置发现、类型/范围校验、不可变设置模型和命名 RGB 颜色。 |
-| `moview/wavefunction.py` | `Shell`、`Wavefunction` 数据模型及轨道能量/占据访问。 |
-| `moview/constants.py` | 单位换算、元素符号、元素颜色、共价半径和核心常量。 |
-| `moview/cache.py` | 配置可写的 Matplotlib/XDG 运行时缓存目录。 |
-
-### 波函数解析
-
-| 文件 | 作用 |
-| --- | --- |
-| `moview/parsers/__init__.py` | 文件格式检测与解析器分派。 |
-| `moview/parsers/common.py` | Fortran `D` 指数等数值文本转换。 |
-| `moview/parsers/fchk.py` | Gaussian formatted checkpoint 解析。 |
-| `moview/parsers/molden.py` | Molden 的 Atoms、GTO、MO 和球谐标记解析。 |
-| `moview/parsers/orca.py` | ORCA 解析的预留模块；当前没有实现或接入 ORCA 格式。 |
-
-### 基函数、网格与表面
-
-| 文件 | 作用 |
-| --- | --- |
-| `moview/basis/__init__.py` | 汇总导出 Gaussian、球谐和 float32/float64 求值 API。 |
-| `moview/basis/gaussian.py` | Gaussian primitive 归一化、Cartesian 幂和壳层函数数目。 |
-| `moview/basis/spherical.py` | spherical-to-Cartesian 变换矩阵。 |
-| `moview/basis/evaluate.py` | float64/float32 的壳层、单轨道和多轨道求值。 |
-| `moview/grid.py` | `GridSpec`、分块网格点、BasisGrid 和轨道网格计算。 |
-| `moview/surface.py` | `SurfaceMesh`、marching cubes、可选平滑和批处理表面入口。 |
-| `moview/analysis/__init__.py` | 导出几何分析 API。 |
-| `moview/analysis/geometry.py` | 基于共价半径的分子键识别。 |
-
-### GUI
-
-| 文件 | 作用 |
-| --- | --- |
-| `moview/gui/main_window.py` | 主窗口状态、异步任务、缓存、颜色、信息栏、比较视图、预取和相机控制。 |
-| `moview/gui/layout.py` | Compute/Display 控件、颜色选择器、轨道表、紧凑信息栏和画布布局。 |
-| `moview/gui/gl_view.py` | OpenGL 视图、fog shader、表面材质、分子几何、透视贴附/浮动批量标签和鼠标交互。 |
-| `moview/gui/opengl_context.py` | 设置可移植的桌面 Qt OpenGL surface format。 |
-| `moview/gui/linux_qt.py` | Linux xcb 动态库预检及系统软件包安装提示。 |
-| `moview/gui/widgets.py` | 数值滑块、角落坐标轴、视图宿主和 `SceneSlot` 状态。 |
-| `moview/gui/presentation.py` | 显示风格/标签选项、高 Grid 阈值和警告文本。 |
-| `moview/gui/styles.py` | Qt 样式表和 GUI 配色。 |
-| `moview/gui/native_stderr.py` | 精确过滤已知无害的 macOS TSM/IMK 和 Qt keymapper 输入法诊断，保留 Python traceback、OpenGL 错误和其他 stderr。 |
-| `moview/gui/__init__.py` | GUI API 的懒加载导出，确保批处理不要求 PyQt。 |
-
-### 测试
-
-| 文件 | 作用 |
-| --- | --- |
-| `tests/test_config.py` | 配置发现、覆盖优先级、资源/颜色解析、错误输入和 CLI 默认值。 |
-| `tests/test_smoke.py` | 常量、Linux Qt 预检、标签、真实高 Grid 规格、Molden 错误输入和 macOS 日志过滤。 |
-| `tests/test_gui.py` | GUI 默认值、资源配置、颜色/标题同步、无上限 Grid、预渲染、缓存、异步加载、快捷键和显示样式。无 GUI 依赖时自动跳过。 |
-| `tests/test_wavefunctions.py` | 可选的 FCHK/Molden 样例集成测试和低 Grid 等值面测试。 |
-
-大型波函数样例只作为本地测试数据，不属于仓库内容；样例不可用时，依赖它们的集成测试会明确跳过。
-
-## 开发检查
-
-基础环境：
+## 批处理模式
 
 ```bash
-python -m compileall -q -x '(^|/)\._' moview tests
+moview file.fch --batch                          # HOMO，默认网格与等值面值
+moview file.molden --batch --check               # 同时检查 MO 正交归一性
+moview file.fch --batch --spin beta --orbital lumo+1 --grid 64 --iso 0.03
+```
+
+`--orbital` 接受从 1 开始的编号或 `homo`、`lumo`、`homo-2`、`lumo+1` 等。
+`--check` 输出 `max|<i|i>-1|` 与 `max|<i|j>|`，约 `1e-6` 或更小说明文件被正确读取。
+
+## 配置
+
+复制 `moview.example.ini` 为 `moview.ini` 后修改。按以下顺序使用第一个找到的文件：
+`--config PATH`、`$MOVIEW_CONFIG`、`./moview.ini`、
+`~/Library/Application Support/MOview/config.ini`（macOS）、
+`$XDG_CONFIG_HOME/moview/config.ini`（或 `~/.config/moview/config.ini`）、包目录旁的 `moview.ini`。
+命令行参数优先于配置文件。
+
+| 节 | 键 |
+| --- | --- |
+| `[resources]` | `render_cache_mib`、`render_cache_entries`（等值面缓存）、`grid_chunk_points`（每次矩阵乘法的网格点数）、`surface_face_limit` |
+| `[render]` | `grid`、`margin_bohr`、`isovalue`、`surface_style`、`atom_style`、`atom_scale`、`label_mode`、`label_placement`、`label_size`、`positive_color`、`negative_color` |
+| `[view]` | `zoom`、`sync_views`、`show_axes`、`auto_render`、`theme`（system、light、dark） |
+| `[colors]` | `名称 = R, G, B`，修改或新增颜色预设 |
+
+内存单位为 MiB。未知键和非法值会在启动时报告具体文件与键名。旧版预渲染流程的键
+（`basis_workers`、`background_jobs`、`basis_cache_mib`、`max_basis_cache_entry_mib`、
+`prefetch_field_budget_mib`、`max_prefetch_orbitals`）仍可被读取但不再起作用，旧的 `moview.ini` 可继续使用。
+
+## 项目结构
+
+| 路径 | 内容 |
+| --- | --- |
+| `moview/cli.py` | 命令行、批处理、延迟加载 GUI |
+| `moview/config.py` | 配置查找与校验 |
+| `moview/constants.py`、`moview/elements.py` | 单位与默认值；元素符号、颜色、共价半径 |
+| `moview/core/` | 波函数数据模型、基函数约定、轨道计算、网格、等值面、重叠积分、成键 |
+| `moview/parsers/` | 格式识别、FCHK 与 Molden 读取 |
+| `moview/gui/` | 程序入口、主窗口、渲染服务与缓存、面板、视口、着色器、主题 |
+| `moview/gui/platform/` | Linux xcb 预检、macOS stderr 过滤、OpenGL 格式 |
+| `tests/` | 单元测试与 GUI 测试 |
+
+## 开发
+
+```bash
 python -m unittest discover -s tests -v
-python -m moview /path/to/wavefunction.fch --batch --grid 16 --orbital 1
-python -m moview /path/to/wavefunction.molden --batch --grid 16 --orbital 1
+MOVIEW_FIXTURES=/path/to/real/files python -m unittest discover -s tests   # 同时测试真实文件
 ```
 
-GUI 环境中的离屏行为测试：
+GUI 测试以无界面方式运行（`QT_QPA_PLATFORM=offscreen`），Qt 可能打印
+"QOpenGLWidget is not supported on this platform"，属正常现象。
 
-```bash
-QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
-```
+## 限制
 
-离屏 Qt 插件通常不能创建真实 OpenGL context，因此会输出 `QOpenGLWidget is not supported on this platform`；GUI 行为测试仍可运行。真实 OpenGL 显示需要在正常 macOS/桌面会话中启动程序检查。
-
-外置 macOS 磁盘有时会产生 AppleDouble `._*` 文件。`compileall` 的 `-x '(^|/)\._'` 用于跳过这些元数据文件。
-
-editable 安装和源码入口可在这类外置卷上正常使用。正式构建发布 wheel 时，应使用 APFS 或其他不会在 setuptools 生成目录内创建 `._*` 文件的干净 Git checkout。
-
-## 当前限制
-
-- ORCA 波函数解析尚未实现。
-- 极高 Grid 仍可能因物理内存不足失败；程序只取消人工上限，不绕过机器资源限制。
-- marching cubes 需要 `scikit-image`。
-- GUI 需要桌面 OpenGL 环境；纯 SSH/离屏平台可能无法创建 OpenGL context。
+- 不读取 ORCA `.gbw` 等原生格式，请用 `orca_2mkl name -molden` 转换。
+- 极高网格受内存限制；GUI 会先估算开销。
+- GUI 需要桌面 OpenGL；无图形界面的 SSH 环境请使用批处理模式。
